@@ -1219,16 +1219,80 @@ function renderDash(){
 }
 function delMenu(i){if(!confirm(`'${menus[i].name}' 삭제?`))return;menus.splice(i,1);renderDash();updateBadges();}
 // 자체제조 수정
+let editCpItems=[];
 function openCpEdit(i){
   const c=compounds[i];
+  editCpItems=[...c.items.map(it=>({...it}))];
   document.getElementById('edit-cp-idx').value=i;
   document.getElementById('edit-cp-name').value=c.name||'';
   document.getElementById('edit-cp-yield').value=c.yld||'';
   document.getElementById('edit-cp-yu').value=c.yu||'g';
   document.getElementById('edit-cp-type').value=c.cpType||'일반 자체제조';
-  const el=document.getElementById('edit-cp-items');
-  el.innerHTML=c.items.map(it=>`<div style="padding:6px 10px;background:var(--surface2);border-radius:6px;margin-bottom:4px">${it.rtype||it.type} · <strong>${it.name}</strong> · ${it.qty}${it.unit}</div>`).join('') || '<div style="color:var(--text3)">구성 재료 없음</div>';
+  updateEditCpIngSel();
+  renderEditCpItems();
+  updateCpEditPreview();
   document.getElementById('cp-edit-modal').style.display='flex';
+}
+function updateEditCpIngSel(){
+  const rtype=document.getElementById('edit-cp-rtype').value;
+  const cpName=document.getElementById('edit-cp-name').value.trim();
+  const sel=document.getElementById('edit-cp-ing');
+  if(rtype==='i'){
+    sel.innerHTML=ingredients.length?ingredients.map((g,i)=>`<option value="i_${i}">${g.name}(${g.vendor}·${g.uname})</option>`).join(''):'<option value="">-- 식재료 없음 --</option>';
+  } else {
+    const avail=compounds.filter(c=>c.name!==cpName);
+    sel.innerHTML=avail.length?avail.map(c=>`<option value="s_${compounds.indexOf(c)}">${c.name}[${c.cpType||'일반'}](${fd(c.perG)}원/${c.yu})</option>`).join(''):'<option value="">-- 자체제조 없음 --</option>';
+  }
+  updateEditCpUnit();
+}
+function updateEditCpUnit(){
+  const val=document.getElementById('edit-cp-ing').value;
+  if(!val)return;
+  const [type,idx]=val.split('_');
+  document.getElementById('edit-cp-unit').value=type==='i'?(ingredients[idx]?.wu||'g'):(compounds[idx]?.yu||'g');
+}
+function addEditCpItem(){
+  const val=document.getElementById('edit-cp-ing').value;
+  const qty=parseFloat(document.getElementById('edit-cp-qty').value);
+  if(!val||!qty)return alert('재료와 사용량을 입력해주세요');
+  const [type,idx]=val.split('_');
+  let item;
+  if(type==='i'){const g=ingredients[idx];item={name:g.name,vendor:g.vendor,rtype:'식재료',qty,unit:g.wu,cost:g.perUnit*qty};}
+  else{const c=compounds[idx];item={name:c.name,vendor:'',rtype:c.cpType||'자체제조',qty,unit:c.yu,cost:c.perG*qty};}
+  editCpItems.push(item);
+  document.getElementById('edit-cp-qty').value='';
+  renderEditCpItems();updateCpEditPreview();
+}
+function delEditCpItem(i){editCpItems.splice(i,1);renderEditCpItems();updateCpEditPreview();}
+function updateEditCpItemQty(i,v){
+  const qty=parseFloat(v)||0;
+  const it=editCpItems[i];
+  const ing=ingredients.find(g=>g.name===it.name);
+  const cp=compounds.find(c=>c.name===it.name);
+  it.qty=qty;
+  it.cost=ing?ing.perUnit*qty:cp?cp.perG*qty:0;
+  updateCpEditPreview();
+}
+function renderEditCpItems(){
+  const el=document.getElementById('edit-cp-items-list');
+  if(!editCpItems.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px">구성 재료 없음</div>';return;}
+  el.innerHTML=`<table style="width:100%;font-size:13px;border-collapse:collapse">
+    <thead><tr style="background:var(--surface2)"><th style="text-align:left;padding:6px 8px;font-size:11px">재료명</th><th style="text-align:left;padding:6px 8px;font-size:11px">종류</th><th style="text-align:left;padding:6px 8px;font-size:11px">사용량</th><th style="text-align:left;padding:6px 8px;font-size:11px">소계</th><th style="padding:6px 4px;font-size:11px"></th></tr></thead>
+    <tbody>`+editCpItems.map((it,i)=>`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px;font-weight:600">${it.name}</td>
+      <td style="padding:6px 8px"><span class="badge b-gray" style="font-size:10px">${it.rtype}</span></td>
+      <td style="padding:4px 8px"><div style="display:flex;gap:4px;align-items:center"><input type="number" value="${it.qty}" style="width:64px;height:28px;font-size:12px" oninput="updateEditCpItemQty(${i},this.value)"><span style="font-size:11px">${it.unit}</span></div></td>
+      <td style="padding:6px 8px;font-family:'DM Mono',monospace">${fmt(it.cost)}원</td>
+      <td style="padding:6px 4px"><button class="del-btn" onclick="delEditCpItem(${i})">×</button></td>
+    </tr>`).join('')+`</tbody></table>`;
+}
+function updateCpEditPreview(){
+  const total=editCpItems.reduce((s,it)=>s+it.cost,0);
+  const yld=parseFloat(document.getElementById('edit-cp-yield').value)||0;
+  const yu=document.getElementById('edit-cp-yu').value;
+  const el=document.getElementById('edit-cp-preview');
+  if(total&&yld)el.textContent=`총 원가 ${fmt(total)}원 → 1${yu}당 ${fd(total/yld)}원`;
+  else el.textContent='';
 }
 function closeCpEdit(){document.getElementById('cp-edit-modal').style.display='none';}
 async function saveCpEdit(){
@@ -1238,7 +1302,9 @@ async function saveCpEdit(){
   c.yld=parseFloat(document.getElementById('edit-cp-yield').value)||c.yld;
   c.yu=document.getElementById('edit-cp-yu').value;
   c.cpType=document.getElementById('edit-cp-type').value;
-  c.perG=c.total/c.yld;
+  c.items=[...editCpItems];
+  c.total=editCpItems.reduce((s,it)=>s+it.cost,0);
+  c.perG=c.yld?c.total/c.yld:0;
   closeCpEdit();
   renderCpList();updateAllSel();updateBadges();toast('자체제조 수정 완료');
   if(currentUser){setSyncStatus('저장 중...');await saveCompoundToDB(c);setSyncStatus('');}
@@ -1462,15 +1528,22 @@ async function loadAllData() {
       wasteRate: Number(r.waste_rate) || 0
     }));
 
-    compounds = (Array.isArray(comp) ? comp : []).map(r => ({
-      _id: r.id, id: r.id,
-      name: r.name || '',
-      items: r.items || [],
-      cost: Number(r.cost_per_unit) || 0,
-      perG: Number(r.cost_per_unit) || 0,
-      unit: r.unit || 'g', yu: r.unit || 'g',
-      uname: r.unit_name || '단위'
-    }));
+    compounds = (Array.isArray(comp) ? comp : []).map(r => {
+      const items = r.items || [];
+      const perG = Number(r.cost_per_unit) || 0;
+      const yld = Number(r.yield_amount) || Number(r.yld) || 1;
+      const total = perG * yld;
+      return {
+        _id: r.id, id: r.id,
+        name: r.name || '',
+        items: items,
+        cost: perG, perG: perG,
+        yld: yld, total: total,
+        cpType: r.cp_type || r.cpType || '일반 자체제조',
+        unit: r.unit || 'g', yu: r.unit || 'g',
+        uname: r.unit_name || '단위'
+      };
+    });
 
     consumables = (Array.isArray(cons) ? cons : []).map(r => ({
       _id: r.id, id: r.id,
@@ -1497,14 +1570,20 @@ async function loadAllData() {
       type: r.refill_type || 'none'
     }));
 
-    menus = (Array.isArray(menu) ? menu : []).map(r => ({
-      _id: r.id, id: r.id,
-      name: r.name || '', ch: r.channel || 'both',
-      hallPrice: Number(r.price) || 0, delPrice: Number(r.price) || 0,
-      target: 35, items: r.recipe || [],
-      selCsIds: [], feeRate: 0, pkgCost: 0,
-      cookTime: Number(r.cook_time) || 0
-    }));
+    menus = (Array.isArray(menu) ? menu : []).map(r => {
+      // recipe 필드 파싱 (문자열인 경우도 처리)
+      let recipe = r.recipe || [];
+      if(typeof recipe === 'string'){try{recipe=JSON.parse(recipe);}catch(e){recipe=[];}}
+      return {
+        _id: r.id, id: r.id,
+        name: r.name || '', ch: r.channel || 'both',
+        hallPrice: Number(r.price) || 0, delPrice: Number(r.delivery_price||r.price) || 0,
+        target: Number(r.target_rate) || 35,
+        items: Array.isArray(recipe) ? recipe : [],
+        selCsIds: [], feeRate: Number(r.fee_rate)||0, pkgCost: Number(r.pkg_cost)||0,
+        cookTime: Number(r.cook_time) || 0
+      };
+    });
 
     priceHistory = (Array.isArray(ph) ? ph : []).map(r => ({
       _id: r.id, id: r.id,
@@ -1573,7 +1652,9 @@ async function saveCompoundToDB(item) {
     items: item.items,
     cost_per_unit: item.perG,
     unit: item.yu,
-    unit_name: item.yu
+    unit_name: item.yu,
+    yield_amount: item.yld || 1,
+    cp_type: item.cpType || '일반 자체제조'
   };
   if (item._id) row.id = item._id;
   const res = await fetch(`${SUPA_URL}/rest/v1/compounds`, {
@@ -1692,23 +1773,30 @@ updateBadges();
 
 <!-- 자체제조 수정 모달 -->
 <div id="cp-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:12px;padding:28px;width:520px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:80vh;overflow-y:auto">
+  <div style="background:#fff;border-radius:12px;padding:28px;width:600px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto">
     <div style="font-size:16px;font-weight:700;margin-bottom:20px;color:var(--text)">자체제조 수정</div>
     <input type="hidden" id="edit-cp-idx">
     <div class="row" style="margin-bottom:12px">
       <div class="fg f3"><div class="fl">이름</div><input id="edit-cp-name" placeholder="자체제조 이름"></div>
-      <div class="fg"><div class="fl">완성 총량</div><input id="edit-cp-yield" type="number" placeholder="숫자"></div>
+      <div class="fg"><div class="fl">완성 총량</div><input id="edit-cp-yield" type="number" placeholder="숫자" oninput="updateCpEditPreview()"></div>
       <div class="fg" style="max-width:80px"><div class="fl">단위</div>
         <select id="edit-cp-yu"><option value="g">g</option><option value="ml">ml</option><option value="개">개</option><option value="인분">인분</option></select>
       </div>
-    </div>
-    <div class="row" style="margin-bottom:20px">
-      <div class="fg"><div class="fl">타입</div>
+      <div class="fg" style="max-width:130px"><div class="fl">타입</div>
         <select id="edit-cp-type"><option value="일반 자체제조">일반 자체제조</option><option value="프랩">프랩 (1회처리)</option></select>
       </div>
     </div>
-    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">구성 재료</div>
-    <div id="edit-cp-items" style="margin-bottom:16px;font-size:13px"></div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:8px">구성 재료 수정</div>
+    <div id="edit-cp-items-list" style="margin-bottom:12px"></div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">재료 추가</div>
+    <div class="row" style="margin-bottom:16px">
+      <div class="fg" style="max-width:100px"><div class="fl">종류</div><select id="edit-cp-rtype" onchange="updateEditCpIngSel()"><option value="i">식재료</option><option value="s">자체제조</option></select></div>
+      <div class="fg f3"><div class="fl">재료 선택</div><select id="edit-cp-ing" onchange="updateEditCpUnit()"><option value="">-- 선택 --</option></select></div>
+      <div class="fg"><div class="fl">사용량</div><input id="edit-cp-qty" type="number" placeholder="숫자"></div>
+      <div class="fg" style="max-width:56px"><div class="fl">단위</div><input id="edit-cp-unit" value="g" readonly></div>
+      <div class="fg" style="max-width:64px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addEditCpItem()">추가</button></div>
+    </div>
+    <div id="edit-cp-preview" style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:16px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="closeCpEdit()">취소</button>
       <button class="btn btn-p" onclick="saveCpEdit()">수정 저장</button>
