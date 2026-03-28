@@ -1311,14 +1311,97 @@ async function saveCpEdit(){
 }
 
 // 메뉴 수정
+let editMenuItems=[];
+function updateEditMenuIngSel(){
+  const rtype=document.getElementById('edit-menu-rtype').value;
+  const sel=document.getElementById('edit-menu-ing');
+  if(rtype==='i'){
+    const cats=[...new Set(ingredients.map(g=>g.category).filter(Boolean))].sort();
+    const noCat=ingredients.filter(g=>!g.category);
+    let html='';
+    cats.forEach(cat=>{
+      html+=`<optgroup label="📦 ${cat}">`;
+      ingredients.filter(g=>g.category===cat).forEach((g,_)=>{const i=ingredients.indexOf(g);html+=`<option value="i_${i}">${g.name}(${g.vendor}·${fd(g.perUnit)}원/${g.wu})</option>`;});
+      html+=`</optgroup>`;
+    });
+    noCat.forEach(g=>{const i=ingredients.indexOf(g);html+=`<option value="i_${i}">${g.name}(${g.vendor}·${fd(g.perUnit)}원/${g.wu})</option>`;});
+    sel.innerHTML=html||'<option value="">-- 식재료 없음 --</option>';
+  } else if(rtype==='s'){
+    sel.innerHTML=compounds.length?compounds.map((c,i)=>`<option value="s_${i}">${c.name}[${c.cpType||'일반'}](${fd(c.perG)}원/${c.yu})</option>`).join(''):'<option value="">-- 자체제조 없음 --</option>';
+  } else {
+    sel.innerHTML=liquors.length?liquors.map((g,i)=>`<option value="l_${i}">${g.name}(${fd(g.perMl,2)}원/ml)</option>`).join(''):'<option value="">-- 주류 없음 --</option>';
+  }
+  updateEditMenuUnit();
+}
+function updateEditMenuUnit(){
+  const val=document.getElementById('edit-menu-ing').value;
+  if(!val)return;
+  const [type,idx]=val.split('_');
+  let u='g';
+  if(type==='i')u=ingredients[idx]?.wu||'g';
+  else if(type==='s')u=compounds[idx]?.yu||'g';
+  else u='ml';
+  document.getElementById('edit-menu-unit').value=u;
+}
+function addEditMenuItem(){
+  const val=document.getElementById('edit-menu-ing').value;
+  const qty=parseFloat(document.getElementById('edit-menu-qty').value);
+  if(!val||!qty)return alert('재료와 사용량을 입력해주세요');
+  const [type,idx]=val.split('_');
+  let item;
+  if(type==='i'){const g=ingredients[idx];item={name:g.name,vendor:g.vendor,type:'식재료',qty,unit:g.wu,cost:g.perUnit*qty};}
+  else if(type==='s'){const c=compounds[idx];item={name:c.name,vendor:'',type:'자체제조',qty,unit:c.yu,cost:c.perG*qty};}
+  else{const g=liquors[idx];item={name:g.name,vendor:g.vendor,type:'주류',qty,unit:'ml',cost:g.perMl*qty};}
+  editMenuItems.push(item);
+  document.getElementById('edit-menu-qty').value='';
+  renderEditMenuItems();updateMenuEditPreview();
+}
+function delEditMenuItem(i){editMenuItems.splice(i,1);renderEditMenuItems();updateMenuEditPreview();}
+function updateEditMenuItemQty(i,v){
+  const qty=parseFloat(v)||0;
+  const it=editMenuItems[i];
+  const ing=ingredients.find(g=>g.name===it.name);
+  const cp=compounds.find(c=>c.name===it.name);
+  const lq=liquors.find(g=>g.name===it.name);
+  it.qty=qty;
+  it.cost=ing?ing.perUnit*qty:cp?cp.perG*qty:lq?lq.perMl*qty:0;
+  updateMenuEditPreview();
+}
+function renderEditMenuItems(){
+  const el=document.getElementById('edit-menu-items-list');
+  if(!editMenuItems.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px">재료 없음 — 아래에서 추가하세요</div>';return;}
+  el.innerHTML=`<table style="width:100%;font-size:13px;border-collapse:collapse">
+    <thead><tr style="background:var(--surface2)"><th style="text-align:left;padding:6px 8px;font-size:11px">재료명</th><th style="text-align:left;padding:6px 8px;font-size:11px">종류</th><th style="text-align:left;padding:6px 8px;font-size:11px">사용량</th><th style="text-align:left;padding:6px 8px;font-size:11px">소계원가</th><th></th></tr></thead>
+    <tbody>`+editMenuItems.map((it,i)=>`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px;font-weight:600">${it.name}${it.vendor?` <span class="vtag">${it.vendor}</span>`:''}</td>
+      <td style="padding:6px 8px"><span class="badge ${it.type==='자체제조'?'b-info':it.type==='주류'?'b-warn':'b-gray'}" style="font-size:10px">${it.type}</span></td>
+      <td style="padding:4px 8px"><div style="display:flex;gap:4px;align-items:center"><input type="number" value="${it.qty}" style="width:64px;height:28px;font-size:12px" oninput="updateEditMenuItemQty(${i},this.value)"><span style="font-size:11px">${it.unit}</span></div></td>
+      <td style="padding:6px 8px;font-family:'DM Mono',monospace;font-weight:600">${fmt(it.cost)}원</td>
+      <td style="padding:6px 4px"><button class="del-btn" onclick="delEditMenuItem(${i})">×</button></td>
+    </tr>`).join('')+`</tbody></table>`;
+}
+function updateMenuEditPreview(){
+  const total=editMenuItems.reduce((s,it)=>s+it.cost,0);
+  const hp=parseFloat(document.getElementById('edit-menu-hp').value)||0;
+  const el=document.getElementById('edit-menu-preview');
+  if(total){
+    el.style.display='block';
+    const rate=hp?fd(total/hp*100,1)+'%':'—';
+    el.textContent=`재료 원가 합계: ${fmt(total)}원${hp?' → 원가율 '+rate:''}`;
+  } else {el.style.display='none';}
+}
 function openMenuEdit(i){
   const m=menus[i];
+  editMenuItems=[...(m.items||[]).map(it=>({...it}))];
   document.getElementById('edit-menu-idx').value=i;
   document.getElementById('edit-menu-name').value=m.name||'';
   document.getElementById('edit-menu-ch').value=m.ch||'both';
   document.getElementById('edit-menu-hp').value=m.hallPrice||'';
-  document.getElementById('edit-menu-dp').value=m.delPrice!==m.hallPrice?m.delPrice:'';
+  document.getElementById('edit-menu-dp').value=(m.delPrice&&m.delPrice!==m.hallPrice)?m.delPrice:'';
   document.getElementById('edit-menu-target').value=m.target||30;
+  updateEditMenuIngSel();
+  renderEditMenuItems();
+  updateMenuEditPreview();
   document.getElementById('menu-edit-modal').style.display='flex';
 }
 function closeMenuEdit(){document.getElementById('menu-edit-modal').style.display='none';}
@@ -1331,6 +1414,7 @@ async function saveMenuEdit(){
   const dp=parseFloat(document.getElementById('edit-menu-dp').value);
   m.delPrice=dp||m.hallPrice;
   m.target=parseFloat(document.getElementById('edit-menu-target').value)||30;
+  m.items=[...editMenuItems];
   closeMenuEdit();
   renderDash();updateBadges();toast('메뉴 수정 완료');
   if(currentUser){setSyncStatus('저장 중...');await saveMenuToDB(m);setSyncStatus('');}
@@ -1806,23 +1890,38 @@ updateBadges();
 
 <!-- 메뉴 수정 모달 -->
 <div id="menu-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:12px;padding:28px;width:480px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.2)">
-    <div style="font-size:16px;font-weight:700;margin-bottom:20px;color:var(--text)">메뉴 수정</div>
+  <div style="background:#fff;border-radius:12px;padding:28px;width:660px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto">
+    <div style="font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text)">메뉴 레시피 수정</div>
     <input type="hidden" id="edit-menu-idx">
-    <div class="row" style="margin-bottom:12px">
+    <div class="row" style="margin-bottom:10px">
       <div class="fg f2"><div class="fl">메뉴명</div><input id="edit-menu-name" placeholder="메뉴명"></div>
       <div class="fg"><div class="fl">채널</div>
         <select id="edit-menu-ch"><option value="both">홀 + 배달</option><option value="hall">홀 전용</option><option value="delivery">배달 전용</option></select>
       </div>
     </div>
-    <div class="row" style="margin-bottom:12px">
-      <div class="fg"><div class="fl">홀 판매가</div><input id="edit-menu-hp" type="number" placeholder="원"></div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="fg"><div class="fl">홀 판매가</div><input id="edit-menu-hp" type="number" placeholder="원" oninput="updateMenuEditPreview()"></div>
       <div class="fg"><div class="fl">배달 판매가</div><input id="edit-menu-dp" type="number" placeholder="홀가와 동일시 비워두세요"></div>
+      <div class="fg" style="max-width:100px"><div class="fl">목표 원가율</div><input id="edit-menu-target" type="number" value="30"></div>
+      <div class="fg" style="max-width:18px;justify-content:flex-end"><div class="fl">&nbsp;</div><span style="font-size:14px;color:var(--text2);height:36px;display:flex;align-items:center">%</span></div>
     </div>
-    <div class="row" style="margin-bottom:20px">
-      <div class="fg" style="max-width:120px"><div class="fl">목표 원가율</div><input id="edit-menu-target" type="number" value="30"></div>
-      <div class="fg" style="max-width:24px;justify-content:flex-end"><div class="fl">&nbsp;</div><span style="font-size:14px;color:var(--text2);height:36px;display:flex;align-items:center">%</span></div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:8px;margin-top:4px">레시피 재료 수정</div>
+    <div id="edit-menu-items-list" style="margin-bottom:12px"></div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">재료 추가</div>
+    <div class="row" style="margin-bottom:12px">
+      <div class="fg" style="max-width:90px"><div class="fl">종류</div>
+        <select id="edit-menu-rtype" onchange="updateEditMenuIngSel()">
+          <option value="i">식재료</option>
+          <option value="s">자체제조</option>
+          <option value="l">주류</option>
+        </select>
+      </div>
+      <div class="fg f3"><div class="fl">재료 선택</div><select id="edit-menu-ing" onchange="updateEditMenuUnit()"><option value="">-- 선택 --</option></select></div>
+      <div class="fg"><div class="fl">사용량</div><input id="edit-menu-qty" type="number" placeholder="숫자"></div>
+      <div class="fg" style="max-width:50px"><div class="fl">단위</div><input id="edit-menu-unit" value="g" readonly></div>
+      <div class="fg" style="max-width:60px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addEditMenuItem()">추가</button></div>
     </div>
+    <div id="edit-menu-preview" style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:14px;padding:8px 12px;background:var(--accent-l);border-radius:6px;display:none"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="closeMenuEdit()">취소</button>
       <button class="btn btn-p" onclick="saveMenuEdit()">수정 저장</button>
