@@ -901,7 +901,10 @@ async function addTodayPrice(){
   const date=document.getElementById('td-date').value;const ingId=document.getElementById('td-ing').value;const price=parseFloat(document.getElementById('td-price').value);
   if(!date||!ingId||!price) return alert('날짜, 재료, 단가를 모두 입력해주세요');
   const ing=ingredients.find(g=>g.id===ingId||g._id===ingId);if(!ing)return;
-  const item={date,ingId,ingName:ing.name,vendor:ing.vendor,wu:ing.wu,weight:ing.weight,price,perUnit:price/ing.weight,basePerUnit:ing.perUnit};
+  // 폐기율 반영한 실질 단위원가 계산
+  const effectiveW=ing.weight*(1-(ing.wasteRate||0)/100);
+  const perUnit=effectiveW>0?price/effectiveW:price/ing.weight;
+  const item={date,ingId,ingName:ing.name,vendor:ing.vendor,wu:ing.wu,weight:ing.weight,price,perUnit,basePerUnit:ing.perUnit};
   priceHistory.push(item);
   document.getElementById('td-price').value='';
   renderTdList();renderTdRates();renderHistory();renderMonthlyAvg();renderMonthlyRates();toast('단가 등록 완료');
@@ -916,7 +919,13 @@ function renderTdList(){
   el.innerHTML=`<table><thead><tr><th>재료명</th><th>업체</th><th>오늘 납품가</th><th>오늘 단위원가</th><th>기본 대비</th><th></th></tr></thead><tbody>`+
     list.map(p=>{const i=priceHistory.indexOf(p);const diff=p.perUnit-p.basePerUnit;const pct=p.basePerUnit?diff/p.basePerUnit*100:0;const cls=diff>0?'t-up':diff<0?'t-down':'t-same';const arrow=diff>0?'▲':diff<0?'▼':'—';return `<tr><td style="font-weight:600">${p.ingName}</td><td><span class="vtag">${p.vendor}</span></td><td>${fmt(p.price)}원</td><td style="font-family:'DM Mono',monospace;font-weight:600">${fd(p.perUnit)}원/${p.wu}</td><td class="${cls}">${arrow} ${Math.abs(pct).toFixed(1)}%</td><td><button class="del-btn" onclick="delPH(${i})">×</button></td></tr>`;}).join('')+'</tbody></table>';
 }
-function getTodayPU(ingName){const today=document.getElementById('td-date').value;const list=priceHistory.filter(p=>p.date===today&&p.ingName===ingName);return list.length?list[list.length-1].perUnit:null;}
+function getTodayPU(ingName){
+  // td-date 입력값 우선, 없으면 오늘 날짜
+  const tdDateEl=document.getElementById('td-date');
+  const today=tdDateEl&&tdDateEl.value?tdDateEl.value:new Date().toISOString().slice(0,10);
+  const list=priceHistory.filter(p=>p.date===today&&p.ingName===ingName);
+  return list.length?list[list.length-1].perUnit:null;
+}
 function getMonthlyAvgPU(ingName){const cm=new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0');const list=priceHistory.filter(p=>p.ingName===ingName&&p.date.startsWith(cm));return list.length?list.reduce((s,p)=>s+p.perUnit,0)/list.length:null;}
 function calcMenuCostOverride(menu,getPU){
   let cost=0;
@@ -1351,20 +1360,31 @@ function getEffectivePU(ingName){
 function getEffectiveItems(items){
   return items.map(it=>{
     if(it.type==='식재료'||it.rtype==='식재료'){
-      const pu=getEffectivePU(it.name);
-      const effectivePU=pu!==null?pu:(ingredients.find(g=>g.name===it.name)?.perUnit||0);
-      return {...it, cost: effectivePU*it.qty, _effectivePU: effectivePU, _basePU: ingredients.find(g=>g.name===it.name)?.perUnit||0};
+      const ing=ingredients.find(g=>g.name===it.name);
+      const basePU=ing?.perUnit||0;
+      const overridePU=getEffectivePU(it.name); // null이면 당일/월평균 데이터 없음
+      const effectivePU=overridePU!==null?overridePU:basePU;
+      return {
+        ...it,
+        cost: effectivePU*it.qty,
+        _effectivePU: effectivePU,
+        _basePU: basePU,
+        _hasOverride: overridePU!==null
+      };
     } else if(it.type==='자체제조'||it.rtype==='자체제조'||it.rtype==='일반'||it.rtype==='프랩'){
-      // 자체제조 내부 재료도 단가 기준 적용
       const cp=compounds.find(c=>c.name===it.name);
       if(cp&&priceMode!=='base'){
         let cc=0;
+        let allBase=true; // 모든 재료가 기본단가인지 체크
         for(const ci of cp.items){
-          const pu=getEffectivePU(ci.name);
-          cc+=(pu!==null?pu:(ingredients.find(g=>g.name===ci.name)?.perUnit||0))*ci.qty;
+          const overridePU=getEffectivePU(ci.name);
+          const basePU=ingredients.find(g=>g.name===ci.name)?.perUnit||0;
+          const usePU=overridePU!==null?overridePU:basePU;
+          if(overridePU!==null)allBase=false;
+          cc+=usePU*ci.qty;
         }
-        const effectivePerG=cp.yld?cc/cp.yld:cp.perG;
-        return {...it, cost: effectivePerG*it.qty};
+        const effectivePerG=cp.yld>0?cc/cp.yld:cp.perG;
+        return {...it, cost: effectivePerG*it.qty, _allBase: allBase};
       }
     }
     return {...it};
@@ -1390,18 +1410,17 @@ function updatePrev(){
 
   // 단가 기준 비교 정보
   let modeTag='';
-  if(priceMode==='today'){
+  if(priceMode==='today'||priceMode==='monthly'){
     const baseCost=rItems.reduce((s,r)=>s+r.cost,0);
     const diff=fCost-baseCost;
     const diffPct=baseCost?diff/baseCost*100:0;
     const cls=diff>0?'t-up':diff<0?'t-down':'t-same';
-    modeTag=`<span class="badge b-warn" style="font-size:10px">당일 납품가</span> ${diff!==0?`<span class="${cls}" style="font-size:11px">${diff>0?'▲':'▼'} ${Math.abs(diffPct).toFixed(1)}% (${diff>0?'+':''}${fmt(diff)}원)</span>`:'<span style="font-size:11px;color:var(--text3)">변동없음</span>'}`;
-  } else if(priceMode==='monthly'){
-    const baseCost=rItems.reduce((s,r)=>s+r.cost,0);
-    const diff=fCost-baseCost;
-    const diffPct=baseCost?diff/baseCost*100:0;
-    const cls=diff>0?'t-up':diff<0?'t-down':'t-same';
-    modeTag=`<span class="badge b-info" style="font-size:10px">월평균 단가</span> ${diff!==0?`<span class="${cls}" style="font-size:11px">${diff>0?'▲':'▼'} ${Math.abs(diffPct).toFixed(1)}% (${diff>0?'+':''}${fmt(diff)}원)</span>`:'<span style="font-size:11px;color:var(--text3)">변동없음</span>'}`;
+    const label=priceMode==='today'?'당일 납품가':'월평균 단가';
+    const badgeCls=priceMode==='today'?'b-warn':'b-info';
+    // 단가 없는 재료 확인
+    const missingItems=effectiveItems.filter(it=>it._hasOverride===false);
+    const missingWarn=missingItems.length?`<span style="font-size:10px;color:var(--warn)">⚠ ${missingItems.map(i=>i.name).join(', ')} 단가 미입력→기본값 사용</span>`:'';
+    modeTag=`<span class="badge ${badgeCls}" style="font-size:10px">${label}</span> ${diff!==0?`<span class="${cls}" style="font-size:11px">${diff>0?'▲':'▼'} ${Math.abs(diffPct).toFixed(1)}% (${diff>0?'+':''}${fmt(diff)}원)</span>`:'<span style="font-size:11px;color:var(--text3)">변동없음</span>'} ${missingWarn}`;
   }
 
   // 단계별 원가 분리
