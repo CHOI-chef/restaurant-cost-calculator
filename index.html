@@ -656,6 +656,18 @@ tbody tr:hover td{background:var(--surface2)}
     <div class="card-title"><span class="card-dot"></span>소모품 선택</div>
     <div id="cs-check"><div style="color:var(--text3);font-size:13px">소모품 탭에서 먼저 등록하세요</div></div>
   </div>
+  <!-- 단가 기준 선택 -->
+  <div class="card" id="price-mode-card" style="display:none">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-size:13px;font-weight:600;color:var(--text)">📊 원가 계산 기준</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" id="pm-base" onclick="setPriceMode('base')" style="background:var(--accent);color:#fff;border-color:var(--accent)">기본 단가</button>
+        <button class="btn btn-sm" id="pm-today" onclick="setPriceMode('today')">당일 납품가</button>
+        <button class="btn btn-sm" id="pm-monthly" onclick="setPriceMode('monthly')">월평균 단가</button>
+      </div>
+      <span id="price-mode-desc" style="font-size:11px;color:var(--text3)">등록된 기본 단가 기준</span>
+    </div>
+  </div>
   <div id="m-prev" style="display:none;margin-bottom:16px">
     <div class="ch-cards" id="m-rates"></div>
   </div>
@@ -1301,26 +1313,106 @@ function calcMenuCh(m_or_items,hp,dp,fCost,sCost,feeRate,pkgCost){
   return{hallTotal,delTotal,hallCs,delCs,delFee,hallRate:hp?(hallTotal/hp*100):0,delRate:dp?(delTotal/dp*100):0};
 }
 
+let priceMode='base'; // 'base' | 'today' | 'monthly'
+
+function setPriceMode(m){
+  priceMode=m;
+  const modes={
+    base:{btn:'pm-base',desc:'등록된 기본 단가 기준'},
+    today:{btn:'pm-today',desc:'단가 관리 탭의 오늘 납품가 기준'},
+    monthly:{btn:'pm-monthly',desc:'이번 달 납품가 평균 기준'}
+  };
+  ['base','today','monthly'].forEach(k=>{
+    const btn=document.getElementById('pm-'+k);
+    if(!btn)return;
+    const isActive=k===m;
+    btn.style.background=isActive?'var(--accent)':'';
+    btn.style.color=isActive?'#fff':'';
+    btn.style.borderColor=isActive?'var(--accent)':'var(--border2)';
+  });
+  const desc=document.getElementById('price-mode-desc');
+  if(desc)desc.textContent=modes[m]?.desc||'';
+  updatePrev();
+}
+
+// 단가 기준에 따라 실제 단가 가져오기
+function getEffectivePU(ingName){
+  if(priceMode==='today'){
+    const v=getTodayPU(ingName);
+    return v!==null?v:null;
+  } else if(priceMode==='monthly'){
+    const v=getMonthlyAvgPU(ingName);
+    return v!==null?v:null;
+  }
+  return null; // base: 기본값 사용
+}
+
+// 단가 기준으로 재료 목록 원가 재계산 (rItems 원본 변경 없이 복사본 반환)
+function getEffectiveItems(items){
+  return items.map(it=>{
+    if(it.type==='식재료'||it.rtype==='식재료'){
+      const pu=getEffectivePU(it.name);
+      const effectivePU=pu!==null?pu:(ingredients.find(g=>g.name===it.name)?.perUnit||0);
+      return {...it, cost: effectivePU*it.qty, _effectivePU: effectivePU, _basePU: ingredients.find(g=>g.name===it.name)?.perUnit||0};
+    } else if(it.type==='자체제조'||it.rtype==='자체제조'||it.rtype==='일반'||it.rtype==='프랩'){
+      // 자체제조 내부 재료도 단가 기준 적용
+      const cp=compounds.find(c=>c.name===it.name);
+      if(cp&&priceMode!=='base'){
+        let cc=0;
+        for(const ci of cp.items){
+          const pu=getEffectivePU(ci.name);
+          cc+=(pu!==null?pu:(ingredients.find(g=>g.name===ci.name)?.perUnit||0))*ci.qty;
+        }
+        const effectivePerG=cp.yld?cc/cp.yld:cp.perG;
+        return {...it, cost: effectivePerG*it.qty};
+      }
+    }
+    return {...it};
+  });
+}
+
 function updatePrev(){
   const ch=document.getElementById('m-ch').value;const target=parseFloat(document.getElementById('m-target').value)||30;
-  const fCost=rItems.reduce((s,r)=>s+r.cost,0);const sCost=(ch!=='delivery')?getSide():0;
+  const sCost=(ch!=='delivery')?getSide():0;
   const hp=parseFloat(document.getElementById('m-hp').value)||0;const dpI=parseFloat(document.getElementById('m-dp').value)||0;const dp=dpI||hp;
   const feeRate=parseFloat(document.getElementById('m-fee').value)||0;const pkgCost=parseFloat(document.getElementById('m-pkg').value)||0;
-  const {hallTotal,delTotal,delFee,hallRate,delRate}=calcMenuCh(rItems,hp,dp,fCost,sCost,feeRate,pkgCost);
   const el=document.getElementById('m-prev');const re=document.getElementById('m-rates');
-  if(!rItems.length){el.style.display='none';return;}
+  const pmCard=document.getElementById('price-mode-card');
+  if(!rItems.length){el.style.display='none';if(pmCard)pmCard.style.display='none';return;}
   el.style.display='block';
+  if(pmCard)pmCard.style.display='block';
+
+  // 단가 기준 적용된 아이템
+  const effectiveItems=getEffectiveItems(rItems);
+  const fCost=effectiveItems.reduce((s,r)=>s+r.cost,0);
+  const {hallTotal,delTotal,delFee,hallRate,delRate}=calcMenuCh(effectiveItems,hp,dp,fCost,sCost,feeRate,pkgCost);
   const rc=r=>r===0?'var(--text)':r<=target?'var(--accent)':r<=target*1.15?'var(--warn)':'var(--danger)';
 
+  // 단가 기준 비교 정보
+  let modeTag='';
+  if(priceMode==='today'){
+    const baseCost=rItems.reduce((s,r)=>s+r.cost,0);
+    const diff=fCost-baseCost;
+    const diffPct=baseCost?diff/baseCost*100:0;
+    const cls=diff>0?'t-up':diff<0?'t-down':'t-same';
+    modeTag=`<span class="badge b-warn" style="font-size:10px">당일 납품가</span> ${diff!==0?`<span class="${cls}" style="font-size:11px">${diff>0?'▲':'▼'} ${Math.abs(diffPct).toFixed(1)}% (${diff>0?'+':''}${fmt(diff)}원)</span>`:'<span style="font-size:11px;color:var(--text3)">변동없음</span>'}`;
+  } else if(priceMode==='monthly'){
+    const baseCost=rItems.reduce((s,r)=>s+r.cost,0);
+    const diff=fCost-baseCost;
+    const diffPct=baseCost?diff/baseCost*100:0;
+    const cls=diff>0?'t-up':diff<0?'t-down':'t-same';
+    modeTag=`<span class="badge b-info" style="font-size:10px">월평균 단가</span> ${diff!==0?`<span class="${cls}" style="font-size:11px">${diff>0?'▲':'▼'} ${Math.abs(diffPct).toFixed(1)}% (${diff>0?'+':''}${fmt(diff)}원)</span>`:'<span style="font-size:11px;color:var(--text3)">변동없음</span>'}`;
+  }
+
   // 단계별 원가 분리
-  const prepCost=rItems.filter(r=>r.type==='프랩'||r.rtype==='프랩').reduce((s,r)=>s+r.cost,0);
-  const ingCost=rItems.filter(r=>r.type==='식재료'||r.rtype==='식재료').reduce((s,r)=>s+r.cost,0);
-  const compCost=rItems.filter(r=>(r.type==='자체제조'||r.rtype==='자체제조'||r.rtype==='일반')).reduce((s,r)=>s+r.cost,0);
+  const prepCost=effectiveItems.filter(r=>r.type==='프랩'||r.rtype==='프랩').reduce((s,r)=>s+r.cost,0);
+  const ingCost=effectiveItems.filter(r=>r.type==='식재료'||r.rtype==='식재료').reduce((s,r)=>s+r.cost,0);
+  const compCost=effectiveItems.filter(r=>(r.type==='자체제조'||r.rtype==='자체제조'||r.rtype==='일반')).reduce((s,r)=>s+r.cost,0);
 
   let stepHtml='';
   if(prepCost>0||compCost>0||ingCost>0){
     stepHtml=`<div style="margin-top:10px;padding:8px 12px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2)">
-      <div style="font-weight:600;margin-bottom:6px;color:var(--text)">📊 단계별 원가 분리</div>
+      <div style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px;color:var(--text)">📊 단계별 원가 분리 ${modeTag}</div>
       ${ingCost>0?`<div>식재료: <strong style="color:var(--text)">${fmt(ingCost)}원</strong></div>`:''}
       ${compCost>0?`<div>자체제조(일반): <strong style="color:var(--info)">${fmt(compCost)}원</strong></div>`:''}
       ${prepCost>0?`<div>프랩(1차조리): <strong style="color:var(--warn)">${fmt(prepCost)}원</strong></div>`:''}
