@@ -930,9 +930,34 @@ function getMonthlyAvgPU(ingName){const cm=new Date().getFullYear()+'-'+String(n
 function calcMenuCostOverride(menu,getPU){
   let cost=0;
   for(const item of menu.items){
-    if(item.type==='식재료'){const pu=getPU(item.name);cost+=(pu!==null?pu:(ingredients.find(g=>g.name===item.name)?.perUnit||0))*item.qty;}
-    else if(item.type==='자체제조'){const cp=compounds.find(c=>c.name===item.name);if(cp){let cc=0;for(const ci of cp.items){const pu=getPU(ci.name);cc+=(pu!==null?pu:(ingredients.find(g=>g.name===ci.name)?.perUnit||0))*ci.qty;}cost+=cc/cp.yld*item.qty;}
-    }else{cost+=item.cost;}
+    const itemType=item.type||item.rtype||'';
+    if(itemType==='식재료'){
+      const pu=getPU(item.name);
+      const basePU=ingredients.find(g=>g.name===item.name)?.perUnit||0;
+      cost+=(pu!==null?pu:basePU)*item.qty;
+    } else if(itemType==='자체제조'||itemType==='일반'||itemType==='프랩'){
+      const cp=compounds.find(c=>c.name===item.name);
+      if(cp){
+        let cc=0;
+        for(const ci of cp.items){
+          const ciType=ci.type||ci.rtype||'';
+          if(ciType==='식재료'||!ciType){
+            const pu=getPU(ci.name);
+            const basePU=ingredients.find(g=>g.name===ci.name)?.perUnit||0;
+            cc+=(pu!==null?pu:basePU)*ci.qty;
+          } else {
+            cc+=ci.cost||0;
+          }
+        }
+        // yld 안전처리: 없거나 0이면 perG 직접 사용
+        const perG=(cp.yld&&cp.yld>0)?cc/cp.yld:(cp.perG||0);
+        cost+=perG*item.qty;
+      } else {
+        cost+=item.cost||0;
+      }
+    } else {
+      cost+=item.cost||0;
+    }
   }
   return cost;
 }
@@ -2048,12 +2073,13 @@ async function loadAllData() {
     compounds = (Array.isArray(comp) ? comp : []).map(r => {
       const items = r.items || [];
       const perG = Number(r.cost_per_unit) || 0;
-      const yld = Number(r.yield_amount) || Number(r.yld) || 1;
+      // yld: yield_amount 컬럼 없으면 1로 기본값 (절대 0 안됨)
+      const yld = Math.max(Number(r.yield_amount) || Number(r.yld) || 1, 0.001);
       const total = perG * yld;
       return {
         _id: r.id, id: r.id,
         name: r.name || '',
-        items: items,
+        items: Array.isArray(items) ? items : [],
         cost: perG, perG: perG,
         yld: yld, total: total,
         cpType: r.cp_type || r.cpType || '일반 자체제조',
