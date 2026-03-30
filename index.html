@@ -1259,7 +1259,38 @@ function updateRIngByCat(){
 function updateRUnit(){const type=document.getElementById('r-type').value;const i=parseInt(document.getElementById('r-ing').value);let u='g';if(type==='i'&&!isNaN(i)&&ingredients[i])u=ingredients[i].wu;else if(type==='s'&&!isNaN(i)&&compounds[i])u=compounds[i].yu;else if(type==='l')u='ml';document.getElementById('r-unit').value=u;}
 function addRItem(){const type=document.getElementById('r-type').value;const si=parseInt(document.getElementById('r-ing').value);const qty=parseFloat(document.getElementById('r-qty').value);if(isNaN(si)||!qty)return alert('재료와 사용량을 입력해주세요');let item;if(type==='i'){const g=ingredients[si];item={name:g.name,vendor:g.vendor,type:'식재료',qty,unit:g.wu,cost:g.perUnit*qty};}else if(type==='s'){const c=compounds[si];item={name:c.name,vendor:'',type:'자체제조',qty,unit:c.yu,cost:c.perG*qty};}else{const g=liquors[si];item={name:g.name,vendor:g.vendor,type:'주류',qty,unit:'ml',cost:g.perMl*qty};}rItems.push(item);document.getElementById('r-qty').value='';renderRT();updatePrev();}
 function delRItem(i){rItems.splice(i,1);renderRT();updatePrev();}
-function renderRT(){const tb=document.getElementById('r-table');if(!rItems.length){tb.innerHTML='<tr class="empty"><td colspan="5">재료를 추가해주세요</td></tr>';return;}tb.innerHTML=rItems.map((r,i)=>`<tr><td style="font-weight:600">${r.name}${r.vendor?` <span class="vtag">${r.vendor}</span>`:''}</td><td><span class="badge ${r.type==='자체제조'?'b-info':r.type==='주류'?'b-warn':'b-gray'}">${r.type}</span></td><td>${r.qty}${r.unit}</td><td style="font-family:'DM Mono',monospace;font-weight:600">${fmt(r.cost)}원</td><td><button class="del-btn" onclick="delRItem(${i})">×</button></td></tr>`).join('');}
+function updateRItemQty(i,v){
+  const qty=parseFloat(v)||0;
+  const it=rItems[i];
+  const ing=ingredients.find(g=>g.name===it.name);
+  const cp=compounds.find(c=>c.name===it.name);
+  const lq=liquors.find(g=>g.name===it.name);
+  it.qty=qty;
+  it.cost=ing?ing.perUnit*qty:cp?cp.perG*qty:lq?lq.perMl*qty:0;
+  // 원가만 업데이트 (리렌더 없이)
+  const costEl=document.getElementById('r-cost-'+i);
+  if(costEl)costEl.textContent=fmt(it.cost)+'원';
+  updatePrev();
+}
+function renderRT(){
+  const tb=document.getElementById('r-table');
+  if(!rItems.length){tb.innerHTML='<tr class="empty"><td colspan="5">재료를 추가해주세요</td></tr>';return;}
+  tb.innerHTML=rItems.map((r,i)=>`<tr>
+    <td style="font-weight:600">${r.name}${r.vendor?` <span class="vtag">${r.vendor}</span>`:''}</td>
+    <td><span class="badge ${r.type==='자체제조'?'b-info':r.type==='주류'?'b-warn':'b-gray'}">${r.type}</span></td>
+    <td>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" value="${r.qty}" min="0" step="any"
+          style="width:70px;height:28px;font-size:12px;padding:0 6px;border:1px solid var(--border2);border-radius:4px;font-family:'DM Mono',monospace"
+          oninput="updateRItemQty(${i},this.value)"
+          onchange="updateRItemQty(${i},this.value)">
+        <span style="font-size:11px;color:var(--text2)">${r.unit}</span>
+      </div>
+    </td>
+    <td style="font-family:'DM Mono',monospace;font-weight:600" id="r-cost-${i}">${fmt(r.cost)}원</td>
+    <td><button class="del-btn" onclick="delRItem(${i})">×</button></td>
+  </tr>`).join('');
+}
 
 function calcMenuCh(m_or_items,hp,dp,fCost,sCost,feeRate,pkgCost){
   const items=Array.isArray(m_or_items)?m_or_items:m_or_items.items;const csIds=Array.isArray(m_or_items)?selCsIds:m_or_items.selCsIds;
