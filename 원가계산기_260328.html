@@ -356,6 +356,16 @@ tbody tr:hover td{background:var(--surface2)}
     </div>
   </div>
   <div class="card">
+    <div class="card-title"><span class="card-dot"></span>월별 트렌드 그래프</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="btn btn-sm" id="chart-total-btn" onclick="setChartMode('total')" style="background:var(--accent);color:#fff;border-color:var(--accent)">총매출</button>
+      <button class="btn btn-sm" id="chart-ratio-btn" onclick="setChartMode('ratio')">식재료 비율</button>
+      <button class="btn btn-sm" id="chart-food-btn" onclick="setChartMode('food')">식재료비</button>
+    </div>
+    <canvas id="sales-chart" height="180" style="width:100%;max-height:180px"></canvas>
+    <div id="sales-chart-empty" style="text-align:center;color:var(--text3);padding:40px;font-size:13px;display:none">매출을 저장하면 그래프가 표시됩니다</div>
+  </div>
+  <div class="card">
     <div class="card-title"><span class="card-dot"></span>월별 매출 이력</div>
     <div class="tw"><table><thead><tr><th>연월</th><th>홀 매출</th><th>배달 매출</th><th>총 매출</th><th>식재료비</th><th>식재료 비율</th><th>상태</th><th></th></tr></thead>
     <tbody id="sales-hist"><tr class="empty"><td colspan="8">아직 저장된 매출이 없어요</td></tr></tbody></table></div>
@@ -384,19 +394,28 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="fg"><div class="fl">단위당 실제 중량</div><input id="i-weight" type="number" placeholder="숫자"></div>
       <div class="fg" style="max-width:80px"><div class="fl">단위</div><select id="i-wu"><option value="g">g</option><option value="ml">ml</option><option value="개">개</option></select></div>
       <div class="fg"><div class="fl">납품 가격</div><input id="i-price" type="number" placeholder="원"></div>
+      <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="i-waste" type="number" placeholder="0" min="0" max="99" value="0"></div>
       <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addIng()">+ 등록</button></div>
     </div>
-    <div style="font-size:11px;color:var(--text3)">예) 대분류: 참기름 / 재료명: 오뚜기 500ml / 업체: 오뚜기 / 500ml / 8,000원</div>
+    <div style="font-size:11px;color:var(--text3)">예) 대분류: 참기름 / 재료명: 오뚜기 500ml / 업체: 오뚜기 / 500ml / 8,000원 / 폐기율: 0%</div>
   </div>
   <div class="card">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
       <div class="card-title" style="border:none;padding:0;margin:0">등록된 식재료</div>
       <select id="ing-filter" onchange="renderIngT()" style="height:30px;font-size:12px;width:auto;min-width:100px"><option value="">전체 업체</option></select>
       <select id="ing-cat-filter" onchange="renderIngT()" style="height:30px;font-size:12px;width:auto;min-width:100px"><option value="">전체 대분류</option></select>
+      <select id="ing-sort" onchange="renderIngT()" style="height:30px;font-size:12px;width:auto;min-width:110px">
+        <option value="default">등록순</option>
+        <option value="cat">대분류순</option>
+        <option value="name">재료명순</option>
+        <option value="price_asc">단가 낮은순</option>
+        <option value="price_desc">단가 높은순</option>
+      </select>
+      <input id="ing-search" placeholder="🔍 재료명 검색" oninput="renderIngT()" style="height:30px;font-size:12px;width:130px;padding:0 8px;border:1px solid var(--border2);border-radius:6px">
       <span id="ing-cnt" style="font-size:12px;color:var(--text3)"></span>
     </div>
-    <div class="tw"><table><thead><tr><th>대분류</th><th>재료명</th><th>업체</th><th>납품단위</th><th>중량</th><th>납품가</th><th>단위원가</th><th>비교</th><th></th></tr></thead>
-    <tbody id="i-table"><tr class="empty"><td colspan="9">아직 등록된 식재료가 없어요</td></tr></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>대분류</th><th>재료명</th><th>업체</th><th>납품단위</th><th>중량</th><th>납품가</th><th>단위원가</th><th>폐기율</th><th>비교</th><th></th></tr></thead>
+    <tbody id="i-table"><tr class="empty"><td colspan="10">아직 등록된 식재료가 없어요</td></tr></tbody></table></div>
   </div>
 </div>
 
@@ -423,6 +442,7 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="fg"><div class="fl">중량</div><input id="edit-i-weight" type="number" placeholder="숫자"></div>
       <div class="fg" style="max-width:80px"><div class="fl">단위</div><select id="edit-i-wu"><option value="g">g</option><option value="ml">ml</option><option value="개">개</option></select></div>
       <div class="fg"><div class="fl">납품 가격</div><input id="edit-i-price" type="number" placeholder="원"></div>
+      <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="edit-i-waste" type="number" placeholder="0" min="0" max="99"></div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="closeIngEdit()">취소</button>
@@ -690,11 +710,13 @@ async function addIng(){
   const weight=parseFloat(document.getElementById('i-weight').value);const wu=document.getElementById('i-wu').value;
   const price=parseFloat(document.getElementById('i-price').value);
   if(!name||!weight||!price) return alert('재료명, 중량, 가격을 입력해주세요');
-  const item={name,category,vendor,uname,weight,wu,price,perUnit:price/weight,wasteRate:0};
+  const wasteRate=parseFloat(document.getElementById('i-waste').value)||0;
+  const effectiveWeight=weight*(1-wasteRate/100);
+  const item={name,category,vendor,uname,weight,wu,price,perUnit:effectiveWeight>0?price/effectiveWeight:price/weight,wasteRate};
   ingredients.push(item);
-  ['i-name','i-vendor','i-uname','i-weight','i-price','i-category'].forEach(id=>document.getElementById(id).value='');
+  ['i-name','i-vendor','i-uname','i-weight','i-price','i-category','i-waste'].forEach(id=>document.getElementById(id).value='');document.getElementById('i-waste').value='0';
   document.getElementById('i-vsel').value='';document.getElementById('i-cat-sel').value='';
-  renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateHistFilters();updateBadges();toast('식재료 등록 완료');
+  renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateHistFilters();updateBadges();recalcAllCosts();toast('식재료 등록 완료');
   if(currentUser){setSyncStatus('저장 중...');await saveIng(item);setSyncStatus('');}
 }
 async function delIng(i){
@@ -720,6 +742,7 @@ function openIngEdit(i){
   document.getElementById('edit-i-weight').value=g.weight||'';
   document.getElementById('edit-i-wu').value=g.wu||'g';
   document.getElementById('edit-i-price').value=g.price||'';
+  document.getElementById('edit-i-waste').value=g.wasteRate||0;
   document.getElementById('ing-edit-modal').style.display='flex';
 }
 function closeIngEdit(){document.getElementById('ing-edit-modal').style.display='none';}
@@ -735,17 +758,54 @@ async function saveIngEdit(){
   g.weight=parseFloat(document.getElementById('edit-i-weight').value);
   g.wu=document.getElementById('edit-i-wu').value;
   g.price=parseFloat(document.getElementById('edit-i-price').value);
-  g.perUnit=g.price/g.weight;
+  g.wasteRate=parseFloat(document.getElementById('edit-i-waste').value)||0;
+  const ew=g.weight*(1-g.wasteRate/100);
+  g.perUnit=ew>0?g.price/ew:g.price/g.weight;
   closeIngEdit();
-  renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateBadges();toast('수정 완료');
+  renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateBadges();recalcAllCosts();toast('수정 완료 — 레시피 원가 재계산됨');
   if(currentUser){setSyncStatus('저장 중...');await saveIng(g);setSyncStatus('');}
 }
+// ===== 3번: 레시피/자체제조 원가 자동 재계산 =====
+function recalcAllCosts(){
+  // 자체제조 원가 재계산
+  compounds.forEach(cp=>{
+    let total=0;
+    cp.items.forEach(it=>{
+      const ing=ingredients.find(g=>g.name===it.name);
+      const sub=compounds.find(c=>c.name===it.name);
+      if(ing){it.cost=ing.perUnit*it.qty;total+=it.cost;}
+      else if(sub){it.cost=sub.perG*it.qty;total+=it.cost;}
+    });
+    cp.total=total;
+    cp.perG=cp.yld?total/cp.yld:0;
+  });
+  // 메뉴 레시피 원가 재계산
+  menus.forEach(m=>{
+    m.items.forEach(it=>{
+      const ing=ingredients.find(g=>g.name===it.name);
+      const cp=compounds.find(c=>c.name===it.name);
+      const lq=liquors.find(g=>g.name===it.name);
+      if(ing)it.cost=ing.perUnit*it.qty;
+      else if(cp)it.cost=cp.perG*it.qty;
+      else if(lq)it.cost=lq.perMl*it.qty;
+    });
+  });
+  renderCpList();renderDash();
+}
+
 function renderIngT(){
   const vfilter=document.getElementById('ing-filter').value;
   const cfilter=document.getElementById('ing-cat-filter')?.value||'';
+  const sort=document.getElementById('ing-sort')?.value||'default';
+  const search=(document.getElementById('ing-search')?.value||'').trim().toLowerCase();
   let list=ingredients;
   if(vfilter)list=list.filter(g=>g.vendor===vfilter);
   if(cfilter)list=list.filter(g=>g.category===cfilter);
+  if(search)list=list.filter(g=>g.name.toLowerCase().includes(search)||(g.category||'').toLowerCase().includes(search)||(g.vendor||'').toLowerCase().includes(search));
+  if(sort==='cat')list=[...list].sort((a,b)=>(a.category||'zzz').localeCompare(b.category||'zzz')||(a.name.localeCompare(b.name)));
+  else if(sort==='name')list=[...list].sort((a,b)=>a.name.localeCompare(b.name));
+  else if(sort==='price_asc')list=[...list].sort((a,b)=>a.perUnit-b.perUnit);
+  else if(sort==='price_desc')list=[...list].sort((a,b)=>b.perUnit-a.perUnit);
   const tb=document.getElementById('i-table');
   document.getElementById('ing-cnt').textContent=`${list.length}/${ingredients.length}개`;
   if(!list.length){tb.innerHTML='<tr class="empty"><td colspan="9">해당 조건의 식재료가 없어요</td></tr>';return;}
@@ -791,6 +851,7 @@ function renderIngT(){
         <td>${fmt(g.weight)}${g.wu}</td>
         <td>${fmt(g.price)}원</td>
         <td style="font-weight:600;font-family:'DM Mono',monospace">${fd(g.perUnit)}원/${g.wu}</td>
+        <td>${g.wasteRate?`<span class="badge b-warn">${g.wasteRate}%</span>`:'<span style="color:var(--text3)">0%</span>'}</td>
         <td>${multi?`<span class="badge ${ib?'b-ok':'b-gray'}">${ib?'⭐최저가':'비교중'}</span>`:'—'}</td>
         <td style="display:flex;gap:4px">
           <button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="openIngEdit(${i})">수정</button>
@@ -926,6 +987,63 @@ function renderSalesHist(){
   const tb=document.getElementById('sales-hist');
   if(!salesHistory.length){tb.innerHTML='<tr class="empty"><td colspan="8">아직 저장된 매출이 없어요</td></tr>';return;}
   tb.innerHTML=salesHistory.map((s,i)=>{const ok=s.ratio<=30,warn=s.ratio<=35;return `<tr><td style="font-weight:600">${s.month}</td><td>${fmt(s.card)}원</td><td>${fmt(s.totalDel)}원</td><td style="font-weight:600">${fmt(s.total)}원</td><td>${fmt(s.food)}원</td><td style="font-weight:700;color:${ok?'var(--accent)':warn?'var(--warn)':'var(--danger)'}">${fd(s.ratio,1)}%</td><td><span class="badge ${ok?'b-ok':warn?'b-warn':'b-danger'}">${ok?'적정':warn?'주의':'과다'}</span></td><td><button class="del-btn" onclick="salesHistory.splice(${i},1);renderSalesHist()">×</button></td></tr>`;}).join('');
+  renderSalesChart();
+}
+
+
+// ===== 5번: 월별 트렌드 그래프 =====
+let chartMode='total';
+function setChartMode(m){
+  chartMode=m;
+  ['total','ratio','food'].forEach(k=>{
+    const btn=document.getElementById('chart-'+k+'-btn');
+    if(btn){btn.style.background=k===m?'var(--accent)':'';btn.style.color=k===m?'#fff':'';btn.style.borderColor=k===m?'var(--accent)':'var(--border2)';}
+  });
+  renderSalesChart();
+}
+function renderSalesChart(){
+  const canvas=document.getElementById('sales-chart');
+  const empty=document.getElementById('sales-chart-empty');
+  if(!canvas)return;
+  if(!salesHistory.length){canvas.style.display='none';if(empty)empty.style.display='block';return;}
+  canvas.style.display='block';if(empty)empty.style.display='none';
+  const sorted=[...salesHistory].sort((a,b)=>(a.month||a.ym).localeCompare(b.month||b.ym)).slice(-12);
+  const ctx=canvas.getContext('2d');
+  const W=canvas.offsetWidth||canvas.width;canvas.width=W;canvas.height=180;
+  const H=180,pad={t:20,r:20,b:40,l:60};
+  const cw=W-pad.l-pad.r,ch=H-pad.t-pad.b;
+  ctx.clearRect(0,0,W,H);
+  const vals=sorted.map(s=>chartMode==='total'?s.total:chartMode==='ratio'?s.ratio:s.food);
+  const maxV=Math.max(...vals,1);
+  const step=cw/(sorted.length-1||1);
+  // 배경 그리드
+  ctx.strokeStyle='#e2e0d8';ctx.lineWidth=1;
+  [0,0.25,0.5,0.75,1].forEach(r=>{
+    const y=pad.t+ch*(1-r);
+    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(pad.l+cw,y);ctx.stroke();
+    ctx.fillStyle='#9e9b92';ctx.font='10px sans-serif';ctx.textAlign='right';
+    const lv=chartMode==='ratio'?fd(maxV*r,1)+'%':fmt(maxV*r);
+    ctx.fillText(lv,pad.l-6,y+4);
+  });
+  // 면적 채우기
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t+ch);
+  sorted.forEach((s,i)=>{const x=pad.l+i*step;const v=vals[i];const y=pad.t+ch*(1-v/maxV);ctx.lineTo(x,y);});
+  ctx.lineTo(pad.l+(sorted.length-1)*step,pad.t+ch);ctx.closePath();
+  ctx.fillStyle=chartMode==='ratio'?'rgba(201,125,46,0.15)':'rgba(45,90,61,0.15)';ctx.fill();
+  // 라인
+  ctx.beginPath();ctx.strokeStyle=chartMode==='ratio'?'#c97d2e':'#2d5a3d';ctx.lineWidth=2.5;ctx.lineJoin='round';
+  sorted.forEach((s,i)=>{const x=pad.l+i*step;const y=pad.t+ch*(1-vals[i]/maxV);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.stroke();
+  // 점
+  sorted.forEach((s,i)=>{
+    const x=pad.l+i*step;const y=pad.t+ch*(1-vals[i]/maxV);
+    ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);
+    ctx.fillStyle=chartMode==='ratio'?'#c97d2e':'#2d5a3d';ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fill();
+  });
+  // x축 라벨
+  ctx.fillStyle='#6b6960';ctx.font='10px sans-serif';ctx.textAlign='center';
+  sorted.forEach((s,i)=>{const x=pad.l+i*step;ctx.fillText((s.month||s.ym||'').substring(2),x,H-8);});
 }
 
 // 자체제조
@@ -1693,7 +1811,7 @@ async function loadAllData() {
     renderLqT(); renderSideA(); renderCpList();
     renderDash(); renderHistory();
     renderMonthlyAvg(); renderMonthlyRates();
-    renderSalesHist();
+    renderSalesHist();renderSalesChart();
     updateBadges();
     setSyncStatus('');
     toast('✅ 데이터 로드 완료');
@@ -1817,7 +1935,12 @@ async function saveMenuToDB(item) {
   const row = {
     user_id: currentUser.id,
     name: item.name, channel: item.ch,
-    price: item.hallPrice, recipe: item.items,
+    price: item.hallPrice,
+    delivery_price: item.delPrice || item.hallPrice,
+    target_rate: item.target || 35,
+    fee_rate: item.feeRate || 0,
+    pkg_cost: item.pkgCost || 0,
+    recipe: item.items,
     cook_time: item.cookTime || 0
   };
   if (item._id) row.id = item._id;
