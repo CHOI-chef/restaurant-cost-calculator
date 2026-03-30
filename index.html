@@ -1278,7 +1278,27 @@ function updateRIngByCat(){
   updateRUnit();
 }
 function updateRUnit(){const type=document.getElementById('r-type').value;const i=parseInt(document.getElementById('r-ing').value);let u='g';if(type==='i'&&!isNaN(i)&&ingredients[i])u=ingredients[i].wu;else if(type==='s'&&!isNaN(i)&&compounds[i])u=compounds[i].yu;else if(type==='l')u='ml';document.getElementById('r-unit').value=u;}
-function addRItem(){const type=document.getElementById('r-type').value;const si=parseInt(document.getElementById('r-ing').value);const qty=parseFloat(document.getElementById('r-qty').value);if(isNaN(si)||!qty)return alert('재료와 사용량을 입력해주세요');let item;if(type==='i'){const g=ingredients[si];item={name:g.name,vendor:g.vendor,type:'식재료',qty,unit:g.wu,cost:g.perUnit*qty};}else if(type==='s'){const c=compounds[si];item={name:c.name,vendor:'',type:'자체제조',qty,unit:c.yu,cost:c.perG*qty};}else{const g=liquors[si];item={name:g.name,vendor:g.vendor,type:'주류',qty,unit:'ml',cost:g.perMl*qty};}rItems.push(item);document.getElementById('r-qty').value='';renderRT();updatePrev();}
+function addRItem(){
+  const type=document.getElementById('r-type').value;
+  const si=parseInt(document.getElementById('r-ing').value);
+  const qty=parseFloat(document.getElementById('r-qty').value);
+  if(isNaN(si)||!qty)return alert('재료와 사용량을 입력해주세요');
+  let item;
+  if(type==='i'){
+    const g=ingredients[si];
+    // cost는 항상 기본단가 기준으로 저장 (getEffectiveItems에서 오버라이드)
+    item={name:g.name,vendor:g.vendor,type:'식재료',qty,unit:g.wu,cost:g.perUnit*qty,baseCost:g.perUnit*qty};
+  }else if(type==='s'){
+    const c=compounds[si];
+    item={name:c.name,vendor:'',type:'자체제조',qty,unit:c.yu,cost:c.perG*qty,baseCost:c.perG*qty};
+  }else{
+    const g=liquors[si];
+    item={name:g.name,vendor:g.vendor,type:'주류',qty,unit:'ml',cost:g.perMl*qty,baseCost:g.perMl*qty};
+  }
+  rItems.push(item);
+  document.getElementById('r-qty').value='';
+  renderRT();updatePrev();
+}
 function delRItem(i){rItems.splice(i,1);renderRT();updatePrev();}
 function updateRItemQty(i,v){
   const qty=parseFloat(v)||0;
@@ -1286,11 +1306,15 @@ function updateRItemQty(i,v){
   const ing=ingredients.find(g=>g.name===it.name);
   const cp=compounds.find(c=>c.name===it.name);
   const lq=liquors.find(g=>g.name===it.name);
+  const basePU=ing?ing.perUnit:cp?cp.perG:lq?lq.perMl:0;
   it.qty=qty;
-  it.cost=ing?ing.perUnit*qty:cp?cp.perG*qty:lq?lq.perMl*qty:0;
-  // 원가만 업데이트 (리렌더 없이)
+  it.cost=basePU*qty;      // 항상 기본단가 기준
+  it.baseCost=basePU*qty;  // 기본단가 기준 저장
+  // 표시는 현재 priceMode에 맞게
+  const effectiveItems=getEffectiveItems([it]);
+  const displayCost=effectiveItems[0]?.cost||it.cost;
   const costEl=document.getElementById('r-cost-'+i);
-  if(costEl)costEl.textContent=fmt(it.cost)+'원';
+  if(costEl)costEl.textContent=fmt(displayCost)+'원';
   updatePrev();
 }
 function renderRT(){
@@ -1308,7 +1332,7 @@ function renderRT(){
         <span style="font-size:11px;color:var(--text2)">${r.unit}</span>
       </div>
     </td>
-    <td style="font-family:'DM Mono',monospace;font-weight:600" id="r-cost-${i}">${fmt(r.cost)}원</td>
+    <td style="font-family:'DM Mono',monospace;font-weight:600" id="r-cost-${i}">${fmt(getEffectiveItems([r])[0]?.cost||r.cost)}원</td>
     <td><button class="del-btn" onclick="delRItem(${i})">×</button></td>
   </tr>`).join('');
 }
@@ -1359,10 +1383,15 @@ function getEffectivePU(ingName){
 // 단가 기준으로 재료 목록 원가 재계산 (rItems 원본 변경 없이 복사본 반환)
 function getEffectiveItems(items){
   return items.map(it=>{
-    if(it.type==='식재료'||it.rtype==='식재료'){
+    // type과 rtype 둘 다 체크 (저장 방식 혼용 대응)
+    const itemType=it.type||it.rtype||'';
+    const isIng=itemType==='식재료';
+    const isComp=itemType==='자체제조'||itemType==='일반'||itemType==='프랩';
+
+    if(isIng){
       const ing=ingredients.find(g=>g.name===it.name);
       const basePU=ing?.perUnit||0;
-      const overridePU=getEffectivePU(it.name); // null이면 당일/월평균 데이터 없음
+      const overridePU=getEffectivePU(it.name);
       const effectivePU=overridePU!==null?overridePU:basePU;
       return {
         ...it,
@@ -1371,23 +1400,30 @@ function getEffectiveItems(items){
         _basePU: basePU,
         _hasOverride: overridePU!==null
       };
-    } else if(it.type==='자체제조'||it.rtype==='자체제조'||it.rtype==='일반'||it.rtype==='프랩'){
+    } else if(isComp){
       const cp=compounds.find(c=>c.name===it.name);
       if(cp&&priceMode!=='base'){
         let cc=0;
-        let allBase=true; // 모든 재료가 기본단가인지 체크
+        let hasAnyOverride=false;
         for(const ci of cp.items){
-          const overridePU=getEffectivePU(ci.name);
-          const basePU=ingredients.find(g=>g.name===ci.name)?.perUnit||0;
-          const usePU=overridePU!==null?overridePU:basePU;
-          if(overridePU!==null)allBase=false;
-          cc+=usePU*ci.qty;
+          const ciType=ci.rtype||ci.type||'';
+          if(ciType==='식재료'||!ciType){
+            const overridePU=getEffectivePU(ci.name);
+            const basePU=ingredients.find(g=>g.name===ci.name)?.perUnit||0;
+            if(overridePU!==null)hasAnyOverride=true;
+            cc+=(overridePU!==null?overridePU:basePU)*ci.qty;
+          } else {
+            cc+=ci.cost||0;
+          }
         }
         const effectivePerG=cp.yld>0?cc/cp.yld:cp.perG;
-        return {...it, cost: effectivePerG*it.qty, _allBase: allBase};
+        return {...it, cost: effectivePerG*it.qty, _hasOverride: hasAnyOverride};
       }
+      // base 모드이거나 compound 없으면 기본값
+      return {...it, _hasOverride: false};
     }
-    return {...it};
+    // 주류 등 나머지
+    return {...it, _hasOverride: false};
   });
 }
 
@@ -1411,7 +1447,8 @@ function updatePrev(){
   // 단가 기준 비교 정보
   let modeTag='';
   if(priceMode==='today'||priceMode==='monthly'){
-    const baseCost=rItems.reduce((s,r)=>s+r.cost,0);
+    // baseCost: 기본단가 기준 (baseCost 필드 없으면 cost 사용)
+    const baseCost=rItems.reduce((s,r)=>s+(r.baseCost!=null?r.baseCost:r.cost),0);
     const diff=fCost-baseCost;
     const diffPct=baseCost?diff/baseCost*100:0;
     const cls=diff>0?'t-up':diff<0?'t-down':'t-same';
@@ -1524,7 +1561,18 @@ function loadMenuForEdit(i){
   document.getElementById('m-fee').value=m.feeRate||0;
   document.getElementById('m-pkg').value=m.pkgCost||0;
   // 레시피 재료 불러오기
-  rItems=[...(m.items||[]).map(it=>({...it}))];
+  // 불러온 items에 baseCost 없으면 현재 기본단가로 보정
+  rItems=[...(m.items||[]).map(it=>{
+    const itemType=it.type||it.rtype||'';
+    if(!it.baseCost){
+      const ing=ingredients.find(g=>g.name===it.name);
+      const cp=compounds.find(c=>c.name===it.name);
+      const lq=liquors.find(g=>g.name===it.name);
+      const basePU=ing?ing.perUnit:cp?cp.perG:lq?lq.perMl:0;
+      return {...it, cost:basePU*it.qty, baseCost:basePU*it.qty};
+    }
+    return {...it};
+  })];
   selCsIds=[...(m.selCsIds||[])];
   toggleCh();
   renderRT();
