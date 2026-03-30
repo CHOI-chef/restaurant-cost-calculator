@@ -605,7 +605,21 @@ tbody tr:hover td{background:var(--surface2)}
 <div class="page" id="p-menu">
   <div class="page-title">메뉴 레시피</div>
   <div class="page-desc">식재료·자체제조·주류를 조합해 메뉴별 원가율을 계산하세요</div>
+  <!-- 저장된 메뉴 목록 -->
+  <div class="card" id="menu-list-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="card-title" style="border:none;padding:0;margin:0">저장된 메뉴</div>
+      <span id="menu-list-cnt" style="font-size:12px;color:var(--text3)"></span>
+      <button class="btn btn-sm" onclick="showMenuForm()" id="btn-new-menu" style="margin-left:auto">+ 새 메뉴 작성</button>
+    </div>
+    <div id="menu-list-body"><div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">저장된 메뉴가 없어요 — 아래에서 새 메뉴를 작성하세요</div></div>
+  </div>
+  <!-- 메뉴 작성/수정 폼 -->
+  <div id="menu-form-area">
   <div class="card">
+    <div class="card-title"><span class="card-dot"></span><span id="menu-form-title">새 메뉴 작성</span>
+      <button class="btn btn-sm" onclick="hideMenuForm()" style="margin-left:auto;font-size:11px">목록으로</button>
+    </div>
     <div class="card-title"><span class="card-dot"></span>메뉴 기본 정보</div>
     <div class="row">
       <div class="fg f3"><div class="fl">메뉴명</div><input id="m-name" placeholder="예) 삼겹살 1인분, 후라이드 치킨"></div>
@@ -646,9 +660,11 @@ tbody tr:hover td{background:var(--surface2)}
     <div class="ch-cards" id="m-rates"></div>
   </div>
   <div style="display:flex;gap:10px;justify-content:flex-end">
+    <input type="hidden" id="m-edit-idx" value="">
     <button class="btn" onclick="clearMenu()">초기화</button>
-    <button class="btn btn-p" onclick="saveMenu()">메뉴 저장 →</button>
+    <button class="btn btn-p" id="btn-save-menu" onclick="saveMenu()">메뉴 저장 →</button>
   </div>
+  </div><!-- end menu-form-area -->
 </div>
 
 </main>
@@ -1290,13 +1306,122 @@ function updatePrev(){
 
 function clearMenu(){rItems=[];selCsIds=[];['m-name','m-hp','m-dp'].forEach(id=>document.getElementById(id).value='');document.getElementById('m-target').value='30';document.getElementById('m-fee').value='0';document.getElementById('m-pkg').value='0';document.getElementById('m-ch').value='both';document.getElementById('m-plat').value='custom';document.querySelectorAll('#cs-check input').forEach(cb=>cb.checked=false);renderRT();document.getElementById('m-prev').style.display='none';toggleCh();}
 
+
+// ===== 메뉴 레시피 탭 - 저장된 메뉴 목록 =====
+function renderMenuList(){
+  const el=document.getElementById('menu-list-body');
+  const cnt=document.getElementById('menu-list-cnt');
+  if(!el)return;
+  if(!menus.length){
+    el.innerHTML='<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">저장된 메뉴가 없어요 — 아래에서 새 메뉴를 작성하세요</div>';
+    if(cnt)cnt.textContent='';
+    return;
+  }
+  if(cnt)cnt.textContent=menus.length+'개';
+  const sideC=getSide();
+  el.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="background:var(--surface2)">
+      <th style="text-align:left;padding:8px 12px;font-size:11px">메뉴명</th>
+      <th style="text-align:left;padding:8px 12px;font-size:11px">채널</th>
+      <th style="text-align:left;padding:8px 12px;font-size:11px">판매가</th>
+      <th style="text-align:left;padding:8px 12px;font-size:11px">재료원가</th>
+      <th style="text-align:left;padding:8px 12px;font-size:11px">원가율</th>
+      <th style="text-align:left;padding:8px 12px;font-size:11px">상태</th>
+      <th style="padding:8px 4px;font-size:11px"></th>
+    </tr></thead>
+    <tbody>`+menus.map((m,i)=>{
+      const fCost=m.items.reduce((s,r)=>s+r.cost,0);
+      const total=fCost+sideC;
+      const rate=m.hallPrice?total/m.hallPrice*100:0;
+      const ok=rate<=m.target,warn=rate<=m.target*1.15;
+      const chl={'hall':'홀','delivery':'배달','both':'홀+배달'};
+      const chB={'hall':'b-hall','delivery':'b-del','both':'b-both'};
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:9px 12px;font-weight:700">${m.name}</td>
+        <td style="padding:9px 12px"><span class="badge ${chB[m.ch]||'b-gray'}">${chl[m.ch]||m.ch}</span></td>
+        <td style="padding:9px 12px;font-family:'DM Mono',monospace">${fmt(m.hallPrice)}원</td>
+        <td style="padding:9px 12px;font-family:'DM Mono',monospace">${fmt(fCost)}원</td>
+        <td style="padding:9px 12px;font-weight:700;color:${ok?'var(--accent)':warn?'var(--warn)':'var(--danger)'}">${rate?fd(rate,1)+'%':'—'}</td>
+        <td style="padding:9px 12px"><span class="badge ${ok?'b-ok':warn?'b-warn':'b-danger'}">${ok?'목표달성':warn?'주의':'초과'}</span></td>
+        <td style="padding:9px 8px;display:flex;gap:4px">
+          <button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="loadMenuForEdit(${i})">수정</button>
+          <button class="del-btn" onclick="if(confirm('삭제?')){menus.splice(${i},1);renderMenuList();renderDash();updateBadges();}">×</button>
+        </td>
+      </tr>`;
+    }).join('')+`</tbody></table>`;
+}
+
+function showMenuForm(){
+  document.getElementById('menu-form-area').style.display='block';
+  document.getElementById('menu-list-card').style.marginBottom='0';
+  document.getElementById('menu-form-title').textContent='새 메뉴 작성';
+  document.getElementById('m-edit-idx').value='';
+  document.getElementById('btn-save-menu').textContent='메뉴 저장 →';
+  clearMenu();
+  document.getElementById('menu-form-area').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function hideMenuForm(){
+  document.getElementById('menu-form-area').style.display='none';
+  clearMenu();
+}
+
+function loadMenuForEdit(i){
+  const m=menus[i];
+  // 폼 표시
+  document.getElementById('menu-form-area').style.display='block';
+  document.getElementById('menu-form-title').textContent=`"${m.name}" 수정 중`;
+  document.getElementById('m-edit-idx').value=i;
+  document.getElementById('btn-save-menu').textContent='수정 저장 →';
+  // 기본 정보
+  document.getElementById('m-name').value=m.name||'';
+  document.getElementById('m-ch').value=m.ch||'both';
+  document.getElementById('m-hp').value=m.hallPrice||'';
+  document.getElementById('m-dp').value=(m.delPrice&&m.delPrice!==m.hallPrice)?m.delPrice:'';
+  document.getElementById('m-target').value=m.target||30;
+  document.getElementById('m-fee').value=m.feeRate||0;
+  document.getElementById('m-pkg').value=m.pkgCost||0;
+  // 레시피 재료 불러오기
+  rItems=[...(m.items||[]).map(it=>({...it}))];
+  selCsIds=[...(m.selCsIds||[])];
+  toggleCh();
+  renderRT();
+  updatePrev();
+  // 소모품 체크박스 복원
+  setTimeout(()=>{
+    document.querySelectorAll('#cs-check input').forEach(cb=>{
+      cb.checked=selCsIds.includes(parseInt(cb.value));
+    });
+  },100);
+  document.getElementById('menu-form-area').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
 async function saveMenu(){
-  const name=document.getElementById('m-name').value.trim();const ch=document.getElementById('m-ch').value;const hp=parseFloat(document.getElementById('m-hp').value)||0;const dpI=parseFloat(document.getElementById('m-dp').value)||0;const target=parseFloat(document.getElementById('m-target').value)||30;const feeRate=parseFloat(document.getElementById('m-fee').value)||0;const pkgCost=parseFloat(document.getElementById('m-pkg').value)||0;
-  if(!name||!hp)return alert('메뉴명과 홀 판매가를 입력해주세요');if(!rItems.length)return alert('재료를 최소 1개 추가해주세요');
-  const dp=dpI||hp;const idx=menus.findIndex(m=>m.name===name);
+  const name=document.getElementById('m-name').value.trim();
+  const ch=document.getElementById('m-ch').value;
+  const hp=parseFloat(document.getElementById('m-hp').value)||0;
+  const dpI=parseFloat(document.getElementById('m-dp').value)||0;
+  const target=parseFloat(document.getElementById('m-target').value)||30;
+  const feeRate=parseFloat(document.getElementById('m-fee').value)||0;
+  const pkgCost=parseFloat(document.getElementById('m-pkg').value)||0;
+  if(!name||!hp)return alert('메뉴명과 홀 판매가를 입력해주세요');
+  if(!rItems.length)return alert('재료를 최소 1개 추가해주세요');
+  const dp=dpI||hp;
   const obj={name,ch,hallPrice:hp,delPrice:dp,target,items:[...rItems],selCsIds:[...selCsIds],feeRate,pkgCost,cookTime:0};
-  if(idx>=0){obj._id=menus[idx]._id;menus[idx]=obj;}else menus.push(obj);
-  renderDash();clearMenu();document.querySelectorAll('.nav').forEach(n=>{if(n.dataset.page==='dash'){n.click();}});updateBadges();toast(`'${name}' 저장 완료`);
+  // 수정 모드 확인
+  const editIdxEl=document.getElementById('m-edit-idx');
+  const editIdx=editIdxEl?editIdxEl.value:'';
+  if(editIdx!==''&&!isNaN(parseInt(editIdx))){
+    const i=parseInt(editIdx);
+    obj._id=menus[i]._id;
+    menus[i]=obj;
+    toast(`'${name}' 수정 완료`);
+  } else {
+    const idx=menus.findIndex(m=>m.name===name);
+    if(idx>=0){obj._id=menus[idx]._id;menus[idx]=obj;}else menus.push(obj);
+    toast(`'${name}' 저장 완료`);
+  }
+  renderDash();renderMenuList();hideMenuForm();updateBadges();
   if(currentUser){setSyncStatus('저장 중...');await saveMenuToDB(obj);setSyncStatus('');}
 }
 
@@ -1812,6 +1937,7 @@ async function loadAllData() {
     renderDash(); renderHistory();
     renderMonthlyAvg(); renderMonthlyRates();
     renderSalesHist();renderSalesChart();
+    renderMenuList();
     updateBadges();
     setSyncStatus('');
     toast('✅ 데이터 로드 완료');
@@ -1951,6 +2077,7 @@ async function saveMenuToDB(item) {
 // ── 초기화 ──
 toggleCh();
 document.getElementById('p-sa').classList.add('on');
+if(document.getElementById('menu-form-area'))document.getElementById('menu-form-area').style.display='none';
 document.getElementById('pp-today').classList.add('on');
 renderDash();
 updateBadges();
