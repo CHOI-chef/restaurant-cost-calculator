@@ -2533,6 +2533,7 @@ async function loadAllData() {
 
 async function saveIng(item) {
   if (!currentUser) return;
+  const isUpdate = !!item._id;
   const row = {
     user_id: currentUser.id,
     name: item.name, vendor: item.vendor,
@@ -2542,20 +2543,24 @@ async function saveIng(item) {
     category: item.category || '',
     aliases: Array.isArray(item.aliases) ? item.aliases : []
   };
-  if (item._id) row.id = item._id;
+  // PATCH 시 URL에 id 필터를 명시 (이게 누락되면 PostgREST가 어떤 row를 갱신할지 모호)
+  const url = isUpdate
+    ? `${SUPA_URL}/rest/v1/ingredients?id=eq.${encodeURIComponent(item._id)}`
+    : `${SUPA_URL}/rest/v1/ingredients`;
   try {
-    const res = await fetch(`${SUPA_URL}/rest/v1/ingredients`, {
-      method: item._id ? 'PATCH' : 'POST',
+    const res = await fetch(url, {
+      method: isUpdate ? 'PATCH' : 'POST',
       headers: {
         'apikey': SUPA_KEY,
         'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`,
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
       },
-      body: JSON.stringify(item._id ? row : {...row})
+      body: JSON.stringify(row)
     });
     const text = await res.text();
     let data; try{data=text?JSON.parse(text):null;}catch(e){data=text;}
+    console.log(`[saveIng] ${isUpdate?'PATCH':'POST'} ${url}`, {sent:row, status:res.status, response:data});
     if (!res.ok) {
       console.error('[saveIng] 저장 실패', res.status, data, '보낸 row:', row);
       const blob=JSON.stringify(data||'');
@@ -2572,16 +2577,30 @@ async function saveIng(item) {
     }
     if (Array.isArray(data) && data[0]) {
       item._id = data[0].id;
-      // 응답에 aliases가 비어있으면 컬럼이 무시되고 있다는 신호
+      // 응답에 aliases 키 자체가 없으면 컬럼이 진짜로 없는 것
+      if(!('aliases' in data[0])){
+        console.warn('[saveIng] 응답에 aliases 키 없음 — 컬럼 미존재 확정. 응답:', data[0]);
+        toast('⚠️ aliases 컬럼이 DB에 존재하지 않음 — 자동 도우미 띄움');
+        const mig=SCHEMA_MIGRATIONS.find(m=>m.column==='aliases');
+        if(mig) openSqlHelper([mig]);
+        return;
+      }
+      // 응답에 aliases가 있는데 보낸 값과 다르면 PostgREST가 무시한 것 (캐시 미반영)
       if(Array.isArray(item.aliases)&&item.aliases.length>0){
         const savedAliases=data[0].aliases;
-        if(!savedAliases||(Array.isArray(savedAliases)&&savedAliases.length===0)){
-          console.warn('[saveIng] 별칭이 DB에 저장되지 않았습니다. 컬럼 누락 또는 PostgREST 스키마 캐시 문제 가능성. 응답:', data[0]);
-          toast('⚠️ 별칭이 저장되지 않음 — 자동 도우미 띄움');
+        const sentJSON=JSON.stringify(item.aliases);
+        const savedJSON=JSON.stringify(savedAliases||[]);
+        if(sentJSON!==savedJSON){
+          console.warn('[saveIng] 별칭 저장값 불일치. 보냄:',sentJSON,'/ 저장됨:',savedJSON);
+          toast('⚠️ 별칭이 DB에 반영되지 않음 — 도우미 띄움');
           const mig=SCHEMA_MIGRATIONS.find(m=>m.column==='aliases');
           if(mig) openSqlHelper([mig]);
         }
       }
+    } else if (isUpdate && (!data || (Array.isArray(data)&&data.length===0))) {
+      // PATCH 응답이 비어 있으면 id 필터가 어떤 row와도 매칭 안 된 것
+      console.warn('[saveIng] PATCH 응답 비어 있음 — id 필터가 매칭 실패. _id:', item._id);
+      toast('⚠️ 수정 대상 row를 찾지 못함 (id 필터 미스)');
     }
   } catch(e) {
     console.error('[saveIng] 네트워크/예외', e);
