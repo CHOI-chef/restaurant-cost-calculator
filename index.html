@@ -2427,18 +2427,46 @@ async function saveIng(item) {
     aliases: Array.isArray(item.aliases) ? item.aliases : []
   };
   if (item._id) row.id = item._id;
-  const res = await fetch(`${SUPA_URL}/rest/v1/ingredients`, {
-    method: item._id ? 'PATCH' : 'POST',
-    headers: {
-      'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
-    },
-    body: JSON.stringify(item._id ? row : {...row})
-  });
-  const data = await res.json();
-  if (Array.isArray(data) && data[0]) item._id = data[0].id;
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/ingredients`, {
+      method: item._id ? 'PATCH' : 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(item._id ? row : {...row})
+    });
+    const text = await res.text();
+    let data; try{data=text?JSON.parse(text):null;}catch(e){data=text;}
+    if (!res.ok) {
+      console.error('[saveIng] 저장 실패', res.status, data, '보낸 row:', row);
+      const blob=JSON.stringify(data||'');
+      if(/aliases/i.test(blob)){
+        toast('⚠️ aliases 컬럼 미발견 — Supabase SQL 재확인 필요 (콘솔 참고)');
+      } else if(res.status===401||res.status===403){
+        toast('⚠️ 인증/권한 오류 — 다시 로그인 필요');
+      } else {
+        toast(`⚠️ 식재료 저장 실패 (HTTP ${res.status})`);
+      }
+      return;
+    }
+    if (Array.isArray(data) && data[0]) {
+      item._id = data[0].id;
+      // 응답에 aliases가 비어있으면 컬럼이 무시되고 있다는 신호
+      if(Array.isArray(item.aliases)&&item.aliases.length>0){
+        const savedAliases=data[0].aliases;
+        if(!savedAliases||(Array.isArray(savedAliases)&&savedAliases.length===0)){
+          console.warn('[saveIng] 별칭이 DB에 저장되지 않았습니다. 컬럼 누락 또는 PostgREST 스키마 캐시 문제 가능성. 응답:', data[0]);
+          toast('⚠️ 별칭이 저장되지 않음 — Supabase 스키마 확인 필요');
+        }
+      }
+    }
+  } catch(e) {
+    console.error('[saveIng] 네트워크/예외', e);
+    toast('⚠️ 식재료 저장 중 네트워크 오류');
+  }
 }
 
 async function saveCompoundToDB(item) {
