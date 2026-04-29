@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>요식업 원가 계산기 v3 — 2026.03.25</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap');
 :root{
@@ -286,7 +287,12 @@ tbody tr:hover td{background:var(--surface2)}
         <div class="fg"><div class="fl">오늘 납품 단가</div><input id="td-price" type="number" placeholder="원"></div>
         <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addTodayPrice()">+ 입력</button></div>
       </div>
-      <div id="today-list"><div style="text-align:center;color:var(--text3);padding:16px;font-size:13px">오늘 납품 단가를 입력해주세요</div></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;padding:8px 10px;background:var(--info-l);border:1px dashed var(--info);border-radius:var(--radius-sm)">
+        <span style="font-size:12px;color:var(--info);font-weight:600">📷 납품서 이미지로 한꺼번에 입력</span>
+        <input type="file" id="ocr-file" accept="image/*" style="display:none" onchange="runOcr(event)">
+        <button class="btn btn-sm" onclick="document.getElementById('ocr-file').click()" style="margin-left:auto">이미지 선택</button>
+      </div>
+      <div id="today-list" style="margin-top:10px"><div style="text-align:center;color:var(--text3);padding:16px;font-size:13px">오늘 납품 단가를 입력해주세요</div></div>
     </div>
     <div class="card">
       <div class="card-title"><span class="card-dot"></span>오늘 단가 기준 메뉴별 원가율</div>
@@ -397,7 +403,10 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="i-waste" type="number" placeholder="0" min="0" max="99" value="0"></div>
       <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addIng()">+ 등록</button></div>
     </div>
-    <div style="font-size:11px;color:var(--text3)">예) 대분류: 참기름 / 재료명: 오뚜기 500ml / 업체: 오뚜기 / 500ml / 8,000원 / 폐기율: 0%</div>
+    <div class="row">
+      <div class="fg" style="flex:1"><div class="fl">별칭 <span style="color:var(--text3);font-size:11px">(쉼표로 구분 — OCR/검색에서 자동 매칭)</span></div><input id="i-aliases" placeholder="예) 참기름오뚜기, 오뚜기참기름, 참기름500"></div>
+    </div>
+    <div style="font-size:11px;color:var(--text3)">예) 대분류: 참기름 / 재료명: 오뚜기 500ml / 업체: 오뚜기 / 500ml / 8,000원 / 폐기율: 0% / 별칭: 참기름오뚜기</div>
   </div>
   <div class="card">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
@@ -416,6 +425,57 @@ tbody tr:hover td{background:var(--surface2)}
     </div>
     <div class="tw"><table><thead><tr><th>대분류</th><th>재료명</th><th>업체</th><th>납품단위</th><th>중량</th><th>납품가</th><th>단위원가</th><th>폐기율</th><th>비교</th><th></th></tr></thead>
     <tbody id="i-table"><tr class="empty"><td colspan="10">아직 등록된 식재료가 없어요</td></tr></tbody></table></div>
+  </div>
+</div>
+
+<!-- OCR 진행 모달 -->
+<div id="ocr-progress-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:28px;width:380px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center">
+    <div style="font-size:16px;font-weight:700;margin-bottom:8px">📷 납품서 인식 중</div>
+    <div id="ocr-progress-msg" style="font-size:13px;color:var(--text2);margin-bottom:14px">엔진 준비 중…</div>
+    <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">
+      <div id="ocr-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width .25s"></div>
+    </div>
+    <div id="ocr-progress-pct" style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text3);margin-top:10px">0%</div>
+  </div>
+</div>
+
+<!-- OCR 검토 모달 -->
+<div id="ocr-review-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:24px;width:980px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div>
+        <div style="font-size:16px;font-weight:700">OCR 인식 결과 검토</div>
+        <div id="ocr-review-summary" style="font-size:12px;color:var(--text2);margin-top:2px"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="fg" style="margin:0;min-width:140px"><div class="fl">적용 날짜</div><input type="date" id="ocr-date" style="height:32px"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:14px;flex:1;overflow:hidden">
+      <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.4px">원본 이미지</div>
+        <div style="border:1px solid var(--border);border-radius:6px;background:var(--surface2);overflow:auto;flex:1"><img id="ocr-preview" style="width:100%;display:block"></div>
+        <details style="font-size:11px;color:var(--text3)"><summary style="cursor:pointer">원본 OCR 텍스트 보기</summary><pre id="ocr-raw" style="font-family:'DM Mono',monospace;font-size:10px;white-space:pre-wrap;background:var(--surface2);padding:8px;border-radius:4px;margin-top:6px;max-height:160px;overflow:auto"></pre></details>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.4px;margin-bottom:6px">인식된 항목 — 매칭 확인 후 일괄 입력</div>
+        <div style="overflow:auto;flex:1;border:1px solid var(--border);border-radius:6px">
+          <table style="font-size:12px"><thead><tr>
+            <th style="width:32px"><input type="checkbox" id="ocr-check-all" onchange="toggleOcrAll(this)"></th>
+            <th>인식된 텍스트</th>
+            <th style="width:90px">단가(원)</th>
+            <th style="width:240px">매칭된 식재료</th>
+            <th style="width:60px">상태</th>
+          </tr></thead>
+          <tbody id="ocr-rows"></tbody></table>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" onclick="closeOcrReview()">취소</button>
+      <button class="btn btn-p" onclick="bulkAddOcrPrices()">선택한 항목 일괄 입력 →</button>
+    </div>
   </div>
 </div>
 
@@ -438,11 +498,14 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="fg f2"><div class="fl">업체명</div><input id="edit-i-vendor" placeholder="업체명"></div>
       <div class="fg"><div class="fl">납품 단위명</div><input id="edit-i-uname" placeholder="예) 1봉"></div>
     </div>
-    <div class="row" style="margin-bottom:20px">
+    <div class="row" style="margin-bottom:12px">
       <div class="fg"><div class="fl">중량</div><input id="edit-i-weight" type="number" placeholder="숫자"></div>
       <div class="fg" style="max-width:80px"><div class="fl">단위</div><select id="edit-i-wu"><option value="g">g</option><option value="ml">ml</option><option value="개">개</option></select></div>
       <div class="fg"><div class="fl">납품 가격</div><input id="edit-i-price" type="number" placeholder="원"></div>
       <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="edit-i-waste" type="number" placeholder="0" min="0" max="99"></div>
+    </div>
+    <div class="row" style="margin-bottom:20px">
+      <div class="fg" style="flex:1"><div class="fl">별칭 <span style="color:var(--text3);font-size:11px">(쉼표로 구분 — OCR/검색에서 자동 매칭)</span></div><input id="edit-i-aliases" placeholder="예) 참기름오뚜기, 오뚜기참기름"></div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="closeIngEdit()">취소</button>
@@ -739,10 +802,11 @@ async function addIng(){
   const price=parseFloat(document.getElementById('i-price').value);
   if(!name||!weight||!price) return alert('재료명, 중량, 가격을 입력해주세요');
   const wasteRate=parseFloat(document.getElementById('i-waste').value)||0;
+  const aliases=parseAliases(document.getElementById('i-aliases').value);
   const effectiveWeight=weight*(1-wasteRate/100);
-  const item={name,category,vendor,uname,weight,wu,price,perUnit:effectiveWeight>0?price/effectiveWeight:price/weight,wasteRate};
+  const item={name,category,vendor,uname,weight,wu,price,perUnit:effectiveWeight>0?price/effectiveWeight:price/weight,wasteRate,aliases};
   ingredients.push(item);
-  ['i-name','i-vendor','i-uname','i-weight','i-price','i-category','i-waste'].forEach(id=>document.getElementById(id).value='');document.getElementById('i-waste').value='0';
+  ['i-name','i-vendor','i-uname','i-weight','i-price','i-category','i-waste','i-aliases'].forEach(id=>document.getElementById(id).value='');document.getElementById('i-waste').value='0';
   document.getElementById('i-vsel').value='';document.getElementById('i-cat-sel').value='';
   renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateHistFilters();updateBadges();recalcAllCosts();toast('식재료 등록 완료');
   if(currentUser){setSyncStatus('저장 중...');await saveIng(item);setSyncStatus('');}
@@ -771,6 +835,7 @@ function openIngEdit(i){
   document.getElementById('edit-i-wu').value=g.wu||'g';
   document.getElementById('edit-i-price').value=g.price||'';
   document.getElementById('edit-i-waste').value=g.wasteRate||0;
+  document.getElementById('edit-i-aliases').value=(g.aliases||[]).join(', ');
   document.getElementById('ing-edit-modal').style.display='flex';
 }
 function closeIngEdit(){document.getElementById('ing-edit-modal').style.display='none';}
@@ -787,12 +852,54 @@ async function saveIngEdit(){
   g.wu=document.getElementById('edit-i-wu').value;
   g.price=parseFloat(document.getElementById('edit-i-price').value);
   g.wasteRate=parseFloat(document.getElementById('edit-i-waste').value)||0;
+  g.aliases=parseAliases(document.getElementById('edit-i-aliases').value);
   const ew=g.weight*(1-g.wasteRate/100);
   g.perUnit=ew>0?g.price/ew:g.price/g.weight;
   closeIngEdit();
   renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateBadges();recalcAllCosts();toast('수정 완료 — 레시피 원가 재계산됨');
   if(currentUser){setSyncStatus('저장 중...');await saveIng(g);setSyncStatus('');}
 }
+// ===== 별칭(alias) 매핑 유틸 =====
+// 쉼표 구분 문자열 → 중복 제거된 별칭 배열
+function parseAliases(s){
+  if(!s) return [];
+  return [...new Set(s.split(/[,\n]/).map(x=>x.trim()).filter(Boolean))];
+}
+// 공백/특수문자 제거 + 소문자 (느슨한 매칭용)
+function normName(s){return (s||'').toString().replace(/[\s\-_·.()/]/g,'').toLowerCase();}
+// 이름/별칭/대분류 어디로든 식재료 1건 찾기. 못 찾거나 모호하면 null
+// 반환: {item, matched:'name'|'alias'|'norm'|'partial'|'category', score} 또는 null
+function findIngByNameOrAlias(query){
+  if(!query) return null;
+  const q=String(query).trim();
+  if(!q) return null;
+  // 1) 정확 이름
+  let hit=ingredients.find(g=>g.name===q);
+  if(hit) return {item:hit,matched:'name',score:1};
+  // 2) 정확 별칭 (대소문자 무시)
+  const ql=q.toLowerCase();
+  hit=ingredients.find(g=>(g.aliases||[]).some(a=>a.toLowerCase()===ql));
+  if(hit) return {item:hit,matched:'alias',score:.95};
+  // 3) 정규화 매칭 (공백·기호 제거 후 동일)
+  const qn=normName(q);
+  if(!qn) return null;
+  hit=ingredients.find(g=>normName(g.name)===qn);
+  if(hit) return {item:hit,matched:'norm',score:.9};
+  hit=ingredients.find(g=>(g.aliases||[]).some(a=>normName(a)===qn));
+  if(hit) return {item:hit,matched:'norm',score:.85};
+  // 4) 부분 일치 (정규화 후 양방향 contains) — 단일일 때만 채택
+  const partial=ingredients.filter(g=>{
+    const n=normName(g.name);
+    if(n && (n.includes(qn)||qn.includes(n))) return true;
+    return (g.aliases||[]).some(a=>{const an=normName(a); return an && (an.includes(qn)||qn.includes(an));});
+  });
+  if(partial.length===1) return {item:partial[0],matched:'partial',score:.7};
+  // 5) 대분류 단일 일치
+  const catHit=ingredients.filter(g=>g.category && normName(g.category)===qn);
+  if(catHit.length===1) return {item:catHit[0],matched:'category',score:.6};
+  return null;
+}
+
 // ===== 3번: 레시피/자체제조 원가 자동 재계산 =====
 function recalcAllCosts(){
   // 자체제조 원가 재계산
@@ -829,7 +936,7 @@ function renderIngT(){
   let list=ingredients;
   if(vfilter)list=list.filter(g=>g.vendor===vfilter);
   if(cfilter)list=list.filter(g=>g.category===cfilter);
-  if(search)list=list.filter(g=>g.name.toLowerCase().includes(search)||(g.category||'').toLowerCase().includes(search)||(g.vendor||'').toLowerCase().includes(search));
+  if(search)list=list.filter(g=>g.name.toLowerCase().includes(search)||(g.category||'').toLowerCase().includes(search)||(g.vendor||'').toLowerCase().includes(search)||(g.aliases||[]).some(a=>a.toLowerCase().includes(search)));
   if(sort==='cat')list=[...list].sort((a,b)=>(a.category||'zzz').localeCompare(b.category||'zzz')||(a.name.localeCompare(b.name)));
   else if(sort==='name')list=[...list].sort((a,b)=>a.name.localeCompare(b.name));
   else if(sort==='price_asc')list=[...list].sort((a,b)=>a.perUnit-b.perUnit);
@@ -871,9 +978,10 @@ function renderIngT(){
     items.forEach(g=>{
       const i=ingredients.indexOf(g);
       const ib=Math.abs(g.perUnit-(best[catLabel||g.name]||0))<0.001;
+      const aliasChips=(g.aliases||[]).length?`<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${g.aliases.map(a=>`<span style="font-size:10px;background:var(--info-l);color:var(--info);padding:1px 6px;border-radius:8px;font-weight:500">${a}</span>`).join('')}</div>`:'';
       html+=`<tr>
         <td>${catLabel?`<span style="font-size:11px;background:var(--accent-l);padding:2px 7px;border-radius:10px;color:var(--accent);font-weight:600">${catLabel}</span>`:'<span style="font-size:11px;color:var(--text3)">—</span>'}</td>
-        <td style="font-weight:600">${g.name}</td>
+        <td style="font-weight:600">${g.name}${aliasChips}</td>
         <td><span class="vtag">${g.vendor}</span></td>
         <td>${g.uname}</td>
         <td>${fmt(g.weight)}${g.wu}</td>
@@ -911,6 +1019,149 @@ async function addTodayPrice(){
   if(currentUser){setSyncStatus('저장 중...');await savePriceHistory(item);setSyncStatus('');}
 }
 function delPH(i){priceHistory.splice(i,1);renderTdList();renderTdRates();renderHistory();renderMonthlyAvg();renderMonthlyRates();}
+
+// ===== OCR 납품서 인식 =====
+let _ocrCandidates=[]; // [{rawText, qty, unitPrice, amount, matched, ingId}]
+
+// OCR 한 줄 파싱 — 숫자 그룹 추출 후 (재료명, 단가) 추론
+function parseOcrLine(line){
+  // 앞쪽 행 번호("1.", "01)") 제거
+  const cleaned=line.replace(/[^\S ]/g,' ').trim().replace(/^\d{1,3}[\.\)]\s+/,'');
+  if(!cleaned||cleaned.length<2) return null;
+  // 숫자 그룹 (콤마 포함 정수). 끝에 .숫자가 붙으면 무시.
+  const numRegex=/\d{1,3}(?:,\d{3})+|\d{2,8}/g;
+  const nums=[];let m;while((m=numRegex.exec(cleaned))!==null){
+    const v=parseInt(m[0].replace(/,/g,''),10);
+    if(!isNaN(v)) nums.push({v,start:m.index,end:m.index+m[0].length,raw:m[0]});
+  }
+  // 헤더/날짜/합계 등 — 숫자가 1개 이하거나 합계/소계/세액 등 키워드 포함 시 제외
+  if(nums.length<2) return null;
+  if(/합\s*계|소\s*계|총\s*액|부가세|세액|할인|배송비|공급가액\s*$/.test(cleaned)) return null;
+  // 가장 큰 숫자 = amount, 그 다음 큰 숫자 = unitPrice 추정
+  const sorted=[...nums].sort((a,b)=>b.v-a.v);
+  const amount=sorted[0]?.v||0;
+  const unitPrice=sorted[1]?.v||0;
+  // 첫 숫자 시작점 이전 텍스트 = 재료명
+  const firstNumStart=Math.min(...nums.map(n=>n.start));
+  let nameRaw=cleaned.slice(0,firstNumStart).trim();
+  // 앞 번호("1.", "01)", "1 ") 제거
+  nameRaw=nameRaw.replace(/^[\d]+[\.\)]\s*/,'').trim();
+  if(!nameRaw||nameRaw.length<1) return null;
+  // 단가가 0이거나 amount와 같으면 amount만 사용
+  return {rawText:cleaned, name:nameRaw, unitPrice: unitPrice||amount, amount};
+}
+
+async function runOcr(ev){
+  const file=ev.target.files&&ev.target.files[0];
+  ev.target.value=''; // 동일 파일 재선택 가능
+  if(!file) return;
+  if(typeof Tesseract==='undefined'){alert('OCR 엔진(Tesseract.js) 로드 실패. 인터넷 연결 후 다시 시도하세요.');return;}
+  const previewUrl=URL.createObjectURL(file);
+  document.getElementById('ocr-preview').src=previewUrl;
+  document.getElementById('ocr-progress-modal').style.display='flex';
+  document.getElementById('ocr-progress-bar').style.width='0%';
+  document.getElementById('ocr-progress-pct').textContent='0%';
+  document.getElementById('ocr-progress-msg').textContent='엔진 준비 중…';
+  try{
+    const res=await Tesseract.recognize(file,'kor+eng',{
+      logger:p=>{
+        const pct=Math.round((p.progress||0)*100);
+        document.getElementById('ocr-progress-bar').style.width=pct+'%';
+        document.getElementById('ocr-progress-pct').textContent=pct+'%';
+        const labels={loading_language_traineddata:'한글 데이터 로드 중…',initializing_api:'엔진 초기화 중…',recognizing_text:'텍스트 인식 중…'};
+        if(labels[p.status]) document.getElementById('ocr-progress-msg').textContent=labels[p.status];
+      }
+    });
+    document.getElementById('ocr-progress-modal').style.display='none';
+    const text=res.data.text||'';
+    const lines=text.split(/\r?\n/);
+    const parsed=lines.map(parseOcrLine).filter(Boolean);
+    document.getElementById('ocr-raw').textContent=text;
+    if(!parsed.length){
+      alert('인식된 데이터가 없습니다. 더 선명한 이미지를 사용하거나 직접 입력해주세요.');
+      return;
+    }
+    // 매칭 시도
+    _ocrCandidates=parsed.map(p=>{
+      const hit=findIngByNameOrAlias(p.name);
+      return {...p, matched:hit?hit.item:null, matchType:hit?hit.matched:null};
+    });
+    openOcrReview();
+  }catch(e){
+    console.error('OCR 실패:',e);
+    document.getElementById('ocr-progress-modal').style.display='none';
+    alert('OCR 처리 실패: '+(e.message||e));
+  }
+}
+
+function openOcrReview(){
+  const tdDate=document.getElementById('td-date').value;
+  document.getElementById('ocr-date').value=tdDate||new Date().toISOString().slice(0,10);
+  const matched=_ocrCandidates.filter(c=>c.matched).length;
+  document.getElementById('ocr-review-summary').textContent=`총 ${_ocrCandidates.length}줄 인식 · ${matched}건 자동 매칭됨`;
+  renderOcrRows();
+  document.getElementById('ocr-check-all').checked=true;
+  document.getElementById('ocr-review-modal').style.display='flex';
+}
+function closeOcrReview(){document.getElementById('ocr-review-modal').style.display='none';_ocrCandidates=[];}
+function toggleOcrAll(cb){document.querySelectorAll('.ocr-row-cb').forEach(x=>{x.checked=cb.checked;});}
+
+function renderOcrRows(){
+  const tb=document.getElementById('ocr-rows');
+  // 매칭 후보 드롭다운 옵션
+  const ingOpts='<option value="">-- 매칭 안함 --</option>'+
+    [...ingredients].sort((a,b)=>(a.category||'').localeCompare(b.category||'')||a.name.localeCompare(b.name))
+      .map((g,i)=>`<option value="${i}">${g.category?'['+g.category+'] ':''}${g.name}</option>`).join('');
+  tb.innerHTML=_ocrCandidates.map((c,i)=>{
+    const checked=c.matched?'checked':'';
+    const sel=c.matched?ingredients.indexOf(c.matched):'';
+    const badge=c.matchType==='name'?'<span class="badge b-ok" style="font-size:10px">이름</span>':
+                c.matchType==='alias'?'<span class="badge b-ok" style="font-size:10px">별칭</span>':
+                c.matchType==='norm'?'<span class="badge b-info" style="font-size:10px">정규화</span>':
+                c.matchType==='partial'?'<span class="badge b-warn" style="font-size:10px">부분</span>':
+                c.matchType==='category'?'<span class="badge b-info" style="font-size:10px">대분류</span>':
+                '<span class="badge b-danger" style="font-size:10px">미매칭</span>';
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="text-align:center;padding:6px"><input type="checkbox" class="ocr-row-cb" data-idx="${i}" ${checked}></td>
+      <td style="padding:6px"><div style="font-weight:600">${escapeHtml(c.name)}</div><div style="font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">${escapeHtml(c.rawText)}</div></td>
+      <td style="padding:6px"><input type="number" class="ocr-row-price" data-idx="${i}" value="${c.unitPrice||c.amount||''}" style="height:28px;font-size:12px;font-family:'DM Mono',monospace"></td>
+      <td style="padding:6px"><select class="ocr-row-sel" data-idx="${i}" onchange="updateOcrMatch(${i},this.value)" style="height:28px;font-size:12px">${ingOpts.replace(`value="${sel}"`,`value="${sel}" selected`)}</select></td>
+      <td style="text-align:center;padding:6px">${badge}</td>
+    </tr>`;
+  }).join('');
+}
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function updateOcrMatch(idx,val){
+  const i=parseInt(val,10);
+  if(isNaN(i)){_ocrCandidates[idx].matched=null;_ocrCandidates[idx].matchType=null;}
+  else{_ocrCandidates[idx].matched=ingredients[i];_ocrCandidates[idx].matchType='manual';}
+}
+
+async function bulkAddOcrPrices(){
+  const date=document.getElementById('ocr-date').value;
+  if(!date){alert('적용 날짜를 선택해주세요');return;}
+  const checks=document.querySelectorAll('.ocr-row-cb:checked');
+  if(!checks.length){alert('입력할 항목을 선택해주세요');return;}
+  let added=0,skipped=0;
+  for(const cb of checks){
+    const idx=parseInt(cb.dataset.idx,10);
+    const cand=_ocrCandidates[idx];
+    const priceInput=document.querySelector(`.ocr-row-price[data-idx="${idx}"]`);
+    const price=parseFloat(priceInput?.value)||0;
+    if(!cand.matched||!price){skipped++;continue;}
+    const ing=cand.matched;
+    const effectiveW=ing.weight*(1-(ing.wasteRate||0)/100);
+    const perUnit=effectiveW>0?price/effectiveW:price/ing.weight;
+    const item={date,ingId:ing._id||ing.id,ingName:ing.name,vendor:ing.vendor,wu:ing.wu,weight:ing.weight,price,perUnit,basePerUnit:ing.perUnit};
+    priceHistory.push(item);
+    if(currentUser){await savePriceHistory(item);}
+    added++;
+  }
+  closeOcrReview();
+  renderTdList();renderTdRates();renderHistory();renderMonthlyAvg();renderMonthlyRates();updateHistFilters();
+  toast(`OCR 입력 완료: ${added}건 등록${skipped?' / '+skipped+'건 스킵':''}`);
+}
+
 function renderTdList(){
   const today=document.getElementById('td-date').value;
   const list=priceHistory.filter(p=>p.date===today);
@@ -2067,7 +2318,8 @@ async function loadAllData() {
       wu: r.unit || 'g',
       price: Number(r.price) || 0,
       perUnit: Number(r.per_unit) || 0,
-      wasteRate: Number(r.waste_rate) || 0
+      wasteRate: Number(r.waste_rate) || 0,
+      aliases: Array.isArray(r.aliases) ? r.aliases : (typeof r.aliases==='string' ? (()=>{try{return JSON.parse(r.aliases||'[]');}catch(e){return [];}})() : [])
     }));
 
     compounds = (Array.isArray(comp) ? comp : []).map(r => {
@@ -2171,7 +2423,8 @@ async function saveIng(item) {
     unit: item.wu, unit_name: item.uname,
     weight: item.weight, price: item.price,
     per_unit: item.perUnit, waste_rate: item.wasteRate || 0,
-    category: item.category || ''
+    category: item.category || '',
+    aliases: Array.isArray(item.aliases) ? item.aliases : []
   };
   if (item._id) row.id = item._id;
   const res = await fetch(`${SUPA_URL}/rest/v1/ingredients`, {
