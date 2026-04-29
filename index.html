@@ -1679,7 +1679,7 @@ function renderCsT(){const tb=document.getElementById('cs-table');document.getEl
 function updateCsCheck(){const el=document.getElementById('cs-check');if(!consumables.length){el.innerHTML='<div style="color:var(--text3);font-size:13px">소모품 탭에서 먼저 등록하세요</div>';return;}const chl={'hall':'홀','delivery':'배달','both':'공통'};el.innerHTML=consumables.map(c=>`<label style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;margin-bottom:8px;font-size:13px;cursor:pointer"><input type="checkbox" value="${c.id}" onchange="selCsIds=Array.from(document.querySelectorAll('#cs-check input:checked')).map(x=>parseInt(x.value));updatePrev()"> ${c.name} <span class="badge ${c.ch==='hall'?'b-hall':c.ch==='delivery'?'b-del':'b-info'}" style="font-size:10px">${chl[c.ch]}</span> <span style="color:var(--text2)">${fd(c.cost,1)}원</span></label>`).join('');}
 
 // 주류
-function addLiquor(){
+async function addLiquor(){
   const name=document.getElementById('lq-name').value.trim();
   const vs=document.getElementById('lq-vsel').value;
   const vi=document.getElementById('lq-vendor').value.trim();
@@ -1695,7 +1695,8 @@ function addLiquor(){
   // vu='L'이면 ml 환산. vu='병'은 입력값이 한 병의 ml로 간주(ml과 동일 처리)
   const volMl = vu==='L' ? volume*1000 : volume;
   const perMl = volMl>0 ? price/volMl : 0;
-  liquors.push({name,vendor,uname,volume,vu,price,sell,perMl});
+  const item={name,vendor,uname,volume,vu,price,sell,perMl};
+  liquors.push(item);
   ['lq-name','lq-vendor','lq-uname','lq-vol','lq-price','lq-sell','lq-box-cnt','lq-box-tot'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('lq-vsel').value='';
   document.getElementById('lq-unamesel').value='';
@@ -1705,8 +1706,15 @@ function addLiquor(){
   document.getElementById('lq-box-hint').style.color='var(--text2)';
   updateLqVuLabel();
   renderLqT();updateAllSel();updateVendorLists();updateBadges();toast('주류 등록 완료');
+  if(currentUser){setSyncStatus('저장 중...');await saveLiquorToDB(item);setSyncStatus('');}
 }
-function delLiquor(i){if(!confirm(`'${liquors[i].name}' 삭제?`))return;liquors.splice(i,1);renderLqT();updateAllSel();updateVendorLists();updateBadges();}
+async function delLiquor(i){
+  if(!confirm(`'${liquors[i].name}' 삭제?`))return;
+  const item=liquors[i];
+  liquors.splice(i,1);
+  renderLqT();updateAllSel();updateVendorLists();updateBadges();
+  if(currentUser&&item._id){await delLiquorDB(item._id);}
+}
 let liquorDispUnit='ml';
 function setLqDispUnit(u,el){
   liquorDispUnit=u;
@@ -2855,6 +2863,58 @@ async function saveCompoundToDB(item) {
 async function delIngDB(id) {
   if (!currentUser || !id) return;
   await fetch(`${SUPA_URL}/rest/v1/ingredients?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${accessToken || SUPA_KEY}` }
+  });
+}
+
+// ===== 주류 DB CRUD =====
+async function saveLiquorToDB(item) {
+  if (!currentUser) return;
+  const isUpdate = !!item._id;
+  // vu='L'이면 ml 환산. vu='병'은 입력값이 한 병 ml로 간주
+  const volMl = (item.vu==='L') ? (Number(item.volume)||0)*1000 : (Number(item.volume)||0);
+  const row = {
+    user_id: currentUser.id,
+    name: item.name,
+    vendor: item.vendor || '미지정',
+    unit: item.uname || '1병',
+    volume_ml: volMl,
+    purchase_price: Number(item.price) || 0,
+    sale_price: Number(item.sell) || 0
+  };
+  const url = isUpdate
+    ? `${SUPA_URL}/rest/v1/liquors?id=eq.${encodeURIComponent(item._id)}`
+    : `${SUPA_URL}/rest/v1/liquors`;
+  try {
+    const res = await fetch(url, {
+      method: isUpdate ? 'PATCH' : 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(row)
+    });
+    const text = await res.text();
+    let data; try{data=text?JSON.parse(text):null;}catch(e){data=text;}
+    console.log(`[saveLiquor] ${isUpdate?'PATCH':'POST'} ${url}`, {sent:row, status:res.status, response:data});
+    if (!res.ok) {
+      console.error('[saveLiquor] 저장 실패', res.status, data);
+      if(res.status===401||res.status===403) toast('⚠️ 인증/권한 오류 — 다시 로그인 필요');
+      else toast(`⚠️ 주류 저장 실패 (HTTP ${res.status})`);
+      return;
+    }
+    if (Array.isArray(data) && data[0]) item._id = data[0].id;
+  } catch(e) {
+    console.error('[saveLiquor] 네트워크/예외', e);
+    toast('⚠️ 주류 저장 중 네트워크 오류');
+  }
+}
+async function delLiquorDB(id) {
+  if (!currentUser || !id) return;
+  await fetch(`${SUPA_URL}/rest/v1/liquors?id=eq.${id}`, {
     method: 'DELETE',
     headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${accessToken || SUPA_KEY}` }
   });
