@@ -634,10 +634,16 @@ tbody tr:hover td{background:var(--surface2)}
     </div>
     <div class="row">
       <div class="fg"><div class="fl">한 단위(병/캔) 용량</div><input id="lq-vol" type="number" placeholder="숫자"></div>
-      <div class="fg" style="max-width:80px"><div class="fl">단위</div><select id="lq-vu"><option value="ml">ml</option><option value="L">L</option></select></div>
-      <div class="fg"><div class="fl">한 단위 구매가</div><input id="lq-price" type="number" placeholder="원"></div>
+      <div class="fg" style="max-width:90px"><div class="fl">단위</div><select id="lq-vu" onchange="updateLqVuLabel()"><option value="ml">ml</option><option value="L">L</option><option value="병">병</option></select></div>
+      <div class="fg"><div class="fl">한 단위 구매가 <span id="lq-price-auto" style="display:none;color:var(--accent);font-size:10px">(박스 자동)</span></div><input id="lq-price" type="number" placeholder="원"></div>
       <div class="fg"><div class="fl">판매가 (선택)</div><input id="lq-sell" type="number" placeholder="원"></div>
       <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addLiquor()">+ 등록</button></div>
+    </div>
+    <div class="row" style="background:var(--info-l);border:1px dashed var(--info);border-radius:6px;padding:10px 12px;margin-top:6px;align-items:center">
+      <div style="font-size:12px;color:var(--info);font-weight:600;flex-shrink:0">📦 박스 단위로 구매하셨나요?</div>
+      <div class="fg" style="max-width:130px"><div class="fl">박스당 갯수</div><input id="lq-box-cnt" type="number" placeholder="예) 30" oninput="calcLqBoxPrice()"></div>
+      <div class="fg" style="max-width:160px"><div class="fl">1박스 가격</div><input id="lq-box-tot" type="number" placeholder="원" oninput="calcLqBoxPrice()"></div>
+      <div id="lq-box-hint" style="font-size:11px;color:var(--text2);align-self:center">→ 한 단위 구매가가 자동 계산됩니다</div>
     </div>
   </div>
   <div class="card">
@@ -819,6 +825,39 @@ function syncV(){const v=document.getElementById('i-vsel').value;if(v)document.g
 function syncCat(){const v=document.getElementById('i-cat-sel').value;if(v)document.getElementById('i-category').value=v;}
 function syncLqV(){const v=document.getElementById('lq-vsel').value;if(v)document.getElementById('lq-vendor').value=v;}
 function syncLqUname(){const v=document.getElementById('lq-unamesel').value;if(v)document.getElementById('lq-uname').value=v;}
+// 단위 드롭다운 변경 시 용량/단위명 placeholder를 의미에 맞게 갱신
+function updateLqVuLabel(){
+  const vu=document.getElementById('lq-vu').value;
+  const vol=document.getElementById('lq-vol');
+  const uname=document.getElementById('lq-uname');
+  const unameSel=document.getElementById('lq-unamesel');
+  if(vu==='병'){
+    vol.placeholder='한 병 ml (예: 360)';
+    if(!uname.value && !unameSel.value){unameSel.value='1병';syncLqUname();}
+  } else if(vu==='L'){
+    vol.placeholder='리터 (예: 1.5)';
+  } else {
+    vol.placeholder='ml (예: 500)';
+  }
+}
+// 박스 가격 + 갯수 입력 시 한 단위 가격 자동 계산
+function calcLqBoxPrice(){
+  const cnt=parseFloat(document.getElementById('lq-box-cnt').value)||0;
+  const tot=parseFloat(document.getElementById('lq-box-tot').value)||0;
+  const hint=document.getElementById('lq-box-hint');
+  const auto=document.getElementById('lq-price-auto');
+  if(cnt>0 && tot>0){
+    const each=tot/cnt;
+    document.getElementById('lq-price').value=Math.round(each);
+    hint.innerHTML=`→ 한 단위 = <b>${fmt(Math.round(each))}원</b> (자동 계산됨)`;
+    hint.style.color='var(--accent)';
+    auto.style.display='inline';
+  } else {
+    hint.textContent='→ 한 단위 구매가가 자동 계산됩니다';
+    hint.style.color='var(--text2)';
+    auto.style.display='none';
+  }
+}
 function updateVendorLists(){
   const iv=[...new Set(ingredients.map(g=>g.vendor).filter(Boolean))];
   const cats=[...new Set(ingredients.map(g=>g.category).filter(Boolean))].sort();
@@ -1507,9 +1546,10 @@ function updateCpIngSel(){
   updateCpU();
 }
 // 주류 사용량 → ml 환산. unit: 'ml'|'병'|'잔'
+// liq.volume은 vu에 따라 ml(또는 vu='ml','병'일 때) / L(vu='L'일 때).
+// vu='병'은 등록 폼에서 입력값이 한 병의 ml이라고 가정.
 function liquorQtyToMl(liq,qty,unit){
   if(!liq) return 0;
-  // liq.volume의 단위가 L이면 1000배
   const oneUnitMl = (liq.vu==='L') ? (Number(liq.volume)||0)*1000 : (Number(liq.volume)||0);
   if(unit==='병') return qty * (oneUnitMl||0);
   if(unit==='잔') return qty * 30; // 잔 = 30ml 기본 (양주샷 기준)
@@ -1645,11 +1685,18 @@ function addLiquor(){
   const price=parseFloat(document.getElementById('lq-price').value);
   const sell=parseFloat(document.getElementById('lq-sell').value)||0;
   if(!name||!volume||!price)return alert('주류명, 용량, 가격을 입력해주세요');
-  const perMl=vu==='L'?price/(volume*1000):price/volume;
+  // vu='L'이면 ml 환산. vu='병'은 입력값이 한 병의 ml로 간주(ml과 동일 처리)
+  const volMl = vu==='L' ? volume*1000 : volume;
+  const perMl = volMl>0 ? price/volMl : 0;
   liquors.push({name,vendor,uname,volume,vu,price,sell,perMl});
-  ['lq-name','lq-vendor','lq-uname','lq-vol','lq-price','lq-sell'].forEach(id=>document.getElementById(id).value='');
+  ['lq-name','lq-vendor','lq-uname','lq-vol','lq-price','lq-sell','lq-box-cnt','lq-box-tot'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('lq-vsel').value='';
   document.getElementById('lq-unamesel').value='';
+  document.getElementById('lq-vu').value='ml';
+  document.getElementById('lq-price-auto').style.display='none';
+  document.getElementById('lq-box-hint').textContent='→ 한 단위 구매가가 자동 계산됩니다';
+  document.getElementById('lq-box-hint').style.color='var(--text2)';
+  updateLqVuLabel();
   renderLqT();updateAllSel();updateVendorLists();updateBadges();toast('주류 등록 완료');
 }
 function delLiquor(i){if(!confirm(`'${liquors[i].name}' 삭제?`))return;liquors.splice(i,1);renderLqT();updateAllSel();updateVendorLists();updateBadges();}
