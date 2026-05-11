@@ -166,6 +166,20 @@ tbody tr:hover td{background:var(--surface2)}
 /* 토스트 */
 #toast{position:fixed;bottom:24px;right:24px;background:var(--text);color:#fff;padding:10px 18px;border-radius:var(--radius);font-size:13px;box-shadow:var(--shadow-md);opacity:0;transform:translateY(8px);transition:all .25s;z-index:9999;pointer-events:none}
 #toast.show{opacity:1;transform:translateY(0)}
+/* 발주서 인쇄 */
+.order-group{border:1px solid var(--border);border-radius:8px;margin-bottom:14px;overflow:hidden}
+.order-group-head{background:var(--surface2);padding:10px 14px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.order-group table{width:100%;border-collapse:collapse;font-size:13px}
+.order-group th,.order-group td{padding:8px 12px;border-bottom:1px solid var(--border);text-align:left}
+.order-group th{background:#fafafa;font-size:11px;color:var(--text3);font-weight:600}
+.order-group tr:last-child td{border-bottom:none}
+.order-group-sub{padding:8px 14px;background:#fafbfc;text-align:right;font-weight:700;font-size:13px}
+@media print{
+  body * {visibility:hidden}
+  #order-print-zone, #order-print-zone * {visibility:visible}
+  #order-print-zone{position:absolute;left:0;top:0;width:100%;padding:14px}
+  .no-print, .no-print *{display:none !important}
+}
 </style>
 </head>
 <body>
@@ -247,6 +261,10 @@ tbody tr:hover td{background:var(--surface2)}
     <span>메뉴 레시피</span>
     <span class="nav-badge" id="b-menu">0</span>
   </div>
+  <div class="nav" data-page="order" onclick="navigate(this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg>
+    <span>발주 예측</span>
+  </div>
 </nav>
 
 <main class="main">
@@ -327,6 +345,35 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="card-title"><span class="card-dot"></span>월 평균 기준 메뉴별 원가율</div>
       <div class="tw"><table><thead><tr><th>메뉴명</th><th>기본 원가율</th><th>월평균 원가율</th><th>변화</th><th>상태</th></tr></thead>
       <tbody id="monthly-rate-table"><tr class="empty"><td colspan="5">단가 이력을 입력하면 계산됩니다</td></tr></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+<!-- 발주 예측 -->
+<div class="page" id="p-order">
+  <div class="page-title">발주 예측</div>
+  <div class="page-desc">메뉴별 월 판매량과 납품 주기를 입력하면 다음 납품일까지 필요한 재료가 자동 계산됩니다</div>
+  <div class="card">
+    <div class="card-title"><span class="card-dot"></span>① 메뉴별 월 판매량 / 납품 주기</div>
+    <div class="notice n-info">월 판매량은 30일 기준입니다. 변경 시 자동 저장됩니다.</div>
+    <div class="tw"><table>
+      <thead><tr><th>메뉴명</th><th>채널</th><th>월 판매량</th><th>일 평균</th><th>납품 주기</th></tr></thead>
+      <tbody id="order-input-table"><tr class="empty"><td colspan="5">메뉴 레시피 탭에서 메뉴를 먼저 등록해주세요</td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="card" id="order-sheet-card">
+    <div class="no-print" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <div class="card-title" style="border:none;padding:0;margin:0"><span class="card-dot"></span>② 발주서 (다음 납품일까지)</div>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm" onclick="renderOrderSheet()">↻ 다시 계산</button>
+      <button class="btn btn-sm btn-p" onclick="printOrderSheet()">🖨️ 인쇄</button>
+    </div>
+    <div class="no-print notice n-info">자체제조에 포함된 재료는 비율대로 자동 펼쳐서 합산됩니다. 주류는 ml 기준입니다.</div>
+    <div id="order-print-zone">
+      <div id="order-print-title" style="font-size:18px;font-weight:700;margin-bottom:6px;display:none">📋 발주서</div>
+      <div id="order-sheet-date" style="font-size:12px;color:var(--text3);margin-bottom:10px"></div>
+      <div id="order-sheet-summary" class="metrics" style="margin-bottom:12px"></div>
+      <div id="order-sheet-body"><div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">월 판매량을 입력하면 발주서가 생성됩니다</div></div>
     </div>
   </div>
 </div>
@@ -817,7 +864,7 @@ tbody tr:hover td{background:var(--surface2)}
 <div id="toast"></div>
 
 <script>
-let ingredients=[],compounds=[],cpItems=[],consumables=[],liquors=[],sideA=[],sideMethod='A',menus=[],rItems=[],selCsIds=[],priceHistory=[],salesHistory=[];
+let ingredients=[],compounds=[],cpItems=[],consumables=[],liquors=[],sideA=[],sideMethod='A',menus=[],rItems=[],selCsIds=[],priceHistory=[],salesHistory=[],menuSales=[];
 let dashFilter='all';
 
 const fmt=n=>Math.round(n).toLocaleString();
@@ -834,7 +881,9 @@ function navigate(el){
   document.querySelectorAll('.nav').forEach(n=>n.classList.remove('on'));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   el.classList.add('on');
-  document.getElementById('p-'+el.dataset.page).classList.add('on');
+  const pg=el.dataset.page;
+  document.getElementById('p-'+pg).classList.add('on');
+  if(pg==='order'){ renderOrderInput(); renderOrderSheet(); }
 }
 
 // 이너 탭
@@ -1339,6 +1388,24 @@ const SCHEMA_MIGRATIONS = [
     column: 'target_rate',
     sql: "ALTER TABLE liquors ADD COLUMN IF NOT EXISTS target_rate numeric DEFAULT 30;",
     desc: '주류 목표 원가율 (%) — 대시보드 비교용'
+  },
+  {
+    id: 'menu_sales_table',
+    table: 'menu_sales',
+    column: 'menu_id',
+    sql: `CREATE TABLE IF NOT EXISTS menu_sales (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid REFERENCES auth.users,
+  menu_id uuid,
+  menu_name text,
+  monthly_qty integer DEFAULT 0,
+  order_cycle text DEFAULT 'weekly',
+  updated_at timestamptz DEFAULT now()
+);
+ALTER TABLE menu_sales ENABLE ROW LEVEL SECURITY;
+CREATE POLICY IF NOT EXISTS "user owns row" ON menu_sales
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);`,
+    desc: '발주 예측 — 메뉴별 월 판매량/주기 저장 테이블'
   }
 ];
 
@@ -1922,6 +1989,175 @@ function renderLqT(){
   }).join('');
 }
 
+// ===== 발주 예측 =====
+const ORDER_CYCLES = {
+  weekly: {label:'주1회', days:7},
+  semiweekly: {label:'주2회', days:3.5},
+  biweekly: {label:'격주(2주에 1회)', days:14},
+  monthly: {label:'월1회', days:30}
+};
+function cycleDays(c){ return (ORDER_CYCLES[c]||ORDER_CYCLES.weekly).days; }
+function cycleLabel(c){ return (ORDER_CYCLES[c]||ORDER_CYCLES.weekly).label; }
+function getMenuSale(menuId, menuName){
+  return menuSales.find(s => (menuId && s.menuId===menuId) || (!menuId && s.menuName===menuName));
+}
+function renderOrderInput(){
+  const tb=document.getElementById('order-input-table');
+  if(!tb) return;
+  if(!menus.length){
+    tb.innerHTML='<tr class="empty"><td colspan="5">메뉴 레시피 탭에서 메뉴를 먼저 등록해주세요</td></tr>';
+    return;
+  }
+  const chl={'hall':'홀','delivery':'배달','both':'홀+배달'};
+  const chB={'hall':'b-hall','delivery':'b-del','both':'b-both'};
+  tb.innerHTML = menus.map((m,i)=>{
+    const sale = getMenuSale(m.id||m._id, m.name) || {monthlyQty:0, orderCycle:'weekly'};
+    const daily = (Number(sale.monthlyQty)||0)/30;
+    const cycOpts = Object.entries(ORDER_CYCLES).map(([k,v])=>`<option value="${k}" ${sale.orderCycle===k?'selected':''}>${v.label}</option>`).join('');
+    const idAttr = (m.id||m._id||'') + '|' + m.name.replace(/"/g,'&quot;');
+    return `<tr>
+      <td style="font-weight:600">${m.name}</td>
+      <td><span class="badge ${chB[m.ch]||'b-gray'}" style="font-size:10px">${chl[m.ch]||m.ch}</span></td>
+      <td><input type="number" min="0" value="${Number(sale.monthlyQty)||''}" placeholder="0" style="width:90px;height:30px;font-size:12px" data-ms-key="${idAttr}" data-ms-field="monthlyQty" oninput="onMenuSaleInput(this)"></td>
+      <td style="font-family:'DM Mono',monospace;color:var(--text2)">${daily>0?fd(daily,1)+'개/일':'—'}</td>
+      <td><select style="width:140px;height:30px;font-size:12px" data-ms-key="${idAttr}" data-ms-field="orderCycle" onchange="onMenuSaleInput(this)">${cycOpts}</select></td>
+    </tr>`;
+  }).join('');
+}
+let _msSaveTimer=null;
+function onMenuSaleInput(inputEl){
+  const key=inputEl.dataset.msKey||'';
+  const field=inputEl.dataset.msField;
+  const [menuId, menuName] = key.split('|');
+  let entry = menuSales.find(s => (menuId && s.menuId===menuId) || (!menuId && s.menuName===menuName));
+  if(!entry){
+    entry={menuId:menuId||null, menuName, monthlyQty:0, orderCycle:'weekly'};
+    menuSales.push(entry);
+  }
+  if(field==='monthlyQty') entry.monthlyQty = parseInt(inputEl.value)||0;
+  else if(field==='orderCycle') entry.orderCycle = inputEl.value;
+  // 일평균 표시 즉시 갱신
+  const tr=inputEl.closest('tr');
+  if(tr && field==='monthlyQty'){
+    const daily=(entry.monthlyQty||0)/30;
+    const cells=tr.querySelectorAll('td');
+    if(cells[3]) cells[3].innerHTML=daily>0?fd(daily,1)+'개/일':'—';
+  }
+  // 디바운스 저장 + 발주서 갱신
+  if(_msSaveTimer) clearTimeout(_msSaveTimer);
+  _msSaveTimer = setTimeout(()=>{
+    saveMenuSaleToDB(entry).catch(e=>console.error(e));
+    renderOrderSheet();
+  }, 800);
+}
+
+// 메뉴 1번 분량을 재료 단위까지 펼쳐서 demand 맵에 누적
+function _expandRecipeItem(it, factor, demand){
+  const t = it.type || it.rtype || '';
+  if(t==='식재료'){
+    const g = ingredients.find(x=>x.name===it.name);
+    if(!g) return;
+    const key=`식재료|${g.name}|${g.vendor||''}`;
+    const ex=demand.get(key);
+    const qty = factor*(Number(it.qty)||0);
+    if(ex){ ex.qty += qty; ex.amount = ex.qty * (g.perUnit||0); }
+    else demand.set(key, {kind:'식재료', name:g.name, vendor:g.vendor||'미지정', unit:g.wu||'g', qty, perUnit:g.perUnit||0, amount: qty*(g.perUnit||0)});
+  } else if(t==='주류'){
+    const g = liquors.find(x=>x.name===it.name);
+    if(!g) return;
+    const qty = factor*(Number(it.qty)||0); // qty는 ml
+    const key=`주류|${g.name}|${g.vendor||''}`;
+    const perMlEff = g.perMl||0; // 보증금 차감 perMl
+    const ex=demand.get(key);
+    if(ex){ ex.qty += qty; ex.amount = ex.qty * perMlEff; }
+    else demand.set(key, {kind:'주류', name:g.name, vendor:g.vendor||'미지정', unit:'ml', qty, perUnit:perMlEff, amount: qty*perMlEff, bottleVol:g.volume||0, uname:g.uname||'1병'});
+  } else {
+    // 자체제조 / 프랩
+    const c = compounds.find(x=>x.name===it.name);
+    if(!c) return;
+    const ratio = (c.yld>0) ? (Number(it.qty)||0) / c.yld : 0;
+    (c.items||[]).forEach(sub => _expandRecipeItem(sub, factor*ratio, demand));
+  }
+}
+function calcOrderDemand(){
+  const demand = new Map();
+  menuSales.forEach(s=>{
+    const m = menus.find(x => (s.menuId && (x.id===s.menuId||x._id===s.menuId)) || x.name===s.menuName);
+    if(!m || !s.monthlyQty) return;
+    const daily = (Number(s.monthlyQty)||0)/30;
+    const factor = daily * cycleDays(s.orderCycle); // 메뉴 1단위 들어가는 양 × 발주 일수
+    (m.items||[]).forEach(it => _expandRecipeItem(it, factor, demand));
+  });
+  return Array.from(demand.values());
+}
+function renderOrderSheet(){
+  const body=document.getElementById('order-sheet-body');
+  const sum=document.getElementById('order-sheet-summary');
+  const dateEl=document.getElementById('order-sheet-date');
+  if(!body) return;
+  const today=new Date();
+  const ymd=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  dateEl.textContent=`작성일 ${ymd}`;
+
+  const rows = calcOrderDemand();
+  if(!rows.length){
+    body.innerHTML='<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">월 판매량을 입력하면 발주서가 생성됩니다</div>';
+    sum.innerHTML='';
+    return;
+  }
+  // 업체별 그룹핑
+  const groups = new Map();
+  rows.forEach(r=>{
+    if(!groups.has(r.vendor)) groups.set(r.vendor, []);
+    groups.get(r.vendor).push(r);
+  });
+  let grandTotal=0, grandCount=0;
+  const groupKeys=[...groups.keys()].sort();
+  body.innerHTML = groupKeys.map(vendor=>{
+    const items = groups.get(vendor).sort((a,b)=>b.amount-a.amount);
+    const sub = items.reduce((s,x)=>s+x.amount,0);
+    grandTotal += sub; grandCount += items.length;
+    return `<div class="order-group">
+      <div class="order-group-head"><span>🏢 ${vendor}</span><span style="font-size:12px;color:var(--text2);font-weight:600">${items.length}개 품목 · 소계 <span style="color:var(--accent);font-family:'DM Mono',monospace">${fmt(Math.round(sub))}원</span></span></div>
+      <table>
+        <thead><tr><th>재료명</th><th>종류</th><th style="text-align:right">발주 수량</th><th>단위</th><th style="text-align:right">단가</th><th style="text-align:right">예상 금액</th></tr></thead>
+        <tbody>${items.map(r=>{
+          const kindBadge = r.kind==='주류'?'b-warn':r.kind==='식재료'?'b-gray':'b-info';
+          let qtyDisplay=`${fd(r.qty,1)} ${r.unit}`;
+          if(r.kind==='주류' && r.bottleVol>0){
+            const bottles = r.qty / r.bottleVol;
+            qtyDisplay = `${fd(r.qty,0)} ml<br><span style="color:var(--text3);font-size:11px">≈ ${fd(bottles,1)} ${r.uname||'1병'}</span>`;
+          }
+          return `<tr>
+            <td style="font-weight:600">${r.name}</td>
+            <td><span class="badge ${kindBadge}" style="font-size:10px">${r.kind}</span></td>
+            <td style="text-align:right;font-family:'DM Mono',monospace">${qtyDisplay}</td>
+            <td style="color:var(--text3)">${r.unit}</td>
+            <td style="text-align:right;font-family:'DM Mono',monospace;color:var(--text2)">${fd(r.perUnit,2)}원</td>
+            <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:700">${fmt(Math.round(r.amount))}원</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      <div class="order-group-sub">소계 <span style="color:var(--accent);font-family:'DM Mono',monospace">${fmt(Math.round(sub))}원</span></div>
+    </div>`;
+  }).join('');
+
+  // 다음 납품일까지 일수 — 가장 짧은 메뉴 주기 기준 표시 (참고용)
+  const usedCycles = menuSales.filter(s=>s.monthlyQty>0).map(s=>cycleDays(s.orderCycle));
+  const minCyc = usedCycles.length ? Math.min(...usedCycles) : 7;
+  sum.innerHTML=`
+    <div class="mc"><div class="ml">발주 품목</div><div class="mv">${grandCount}</div><div class="ms">/ ${groupKeys.length}개 업체</div></div>
+    <div class="mc ok"><div class="ml">예상 총 발주액</div><div class="mv">${fmt(Math.round(grandTotal))}</div><div class="ms">원</div></div>
+    <div class="mc"><div class="ml">최단 납품 주기</div><div class="mv">${minCyc}</div><div class="ms">일분 기준</div></div>`;
+}
+function printOrderSheet(){
+  const rows = calcOrderDemand();
+  if(!rows.length){ alert('발주할 품목이 없습니다. 메뉴별 월 판매량을 먼저 입력해주세요.'); return; }
+  document.getElementById('order-print-title').style.display='block';
+  window.print();
+  setTimeout(()=>{document.getElementById('order-print-title').style.display='none';},500);
+}
+
 // 밑반찬
 function selSide(m){sideMethod=m;['A','B'].forEach(x=>{document.getElementById('mb-'+x.toLowerCase()).classList.toggle('sel',x===m);document.getElementById('p-s'+x.toLowerCase()).classList.toggle('on',x===m);});updatePrev();renderDash();}
 function addSideA(){const name=document.getElementById('sd-name').value.trim();const cost=parseFloat(document.getElementById('sd-cost').value);const type=document.getElementById('sd-type').value;if(!name||!cost)return alert('반찬명과 원가를 입력해주세요');const dr=type==='u'?1.5:type==='r'?1.2:1.0;sideA.push({name,cost,type,refill:dr});document.getElementById('sd-name').value='';document.getElementById('sd-cost').value='';renderSideA();}
@@ -2483,7 +2719,16 @@ function renderTargetVsActual(filtered, rates, modeLabel){
     </div>`;
   }).join('');
 }
-function delMenu(i){if(!confirm(`'${menus[i].name}' 삭제?`))return;menus.splice(i,1);renderDash();updateBadges();}
+function delMenu(i){
+  if(!confirm(`'${menus[i].name}' 삭제?`))return;
+  const m=menus[i];
+  menus.splice(i,1);
+  // 관련 발주 판매량 정리
+  const stale = menuSales.filter(s => (m.id && s.menuId===m.id) || (m._id && s.menuId===m._id) || s.menuName===m.name);
+  stale.forEach(s => { if(s._id) delMenuSaleDB(s._id).catch(()=>{}); });
+  menuSales = menuSales.filter(s => !stale.includes(s));
+  renderDash();renderMenuList&&renderMenuList();renderOrderInput();renderOrderSheet();updateBadges();
+}
 // 자체제조 수정
 let editCpItems=[];
 function openCpEdit(i){
@@ -2882,7 +3127,7 @@ async function loadAllData() {
     const base = `${SUPA_URL}/rest/v1`;
     const uid = currentUser.id;
 
-    const [ing, comp, cons, liq, side, menu, ph, ms] = await Promise.all([
+    const [ing, comp, cons, liq, side, menu, ph, ms, msales] = await Promise.all([
       fetch(`${base}/ingredients?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.json()),
       fetch(`${base}/compounds?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.json()),
       fetch(`${base}/consumables?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.json()),
@@ -2891,6 +3136,7 @@ async function loadAllData() {
       fetch(`${base}/menus?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.json()),
       fetch(`${base}/price_history?user_id=eq.${uid}&order=date.desc`, { headers }).then(r => r.json()),
       fetch(`${base}/monthly_sales?user_id=eq.${uid}&order=year_month.desc`, { headers }).then(r => r.json()),
+      fetch(`${base}/menu_sales?user_id=eq.${uid}&order=updated_at.desc`, { headers }).then(r => r.ok?r.json():[]).catch(()=>[]),
     ]);
 
     console.log('로드 결과:', { ing: ing?.length, comp: comp?.length, menu: menu?.length });
@@ -3000,6 +3246,14 @@ async function loadAllData() {
       ratio: 0
     }));
 
+    menuSales = (Array.isArray(msales) ? msales : []).map(r => ({
+      _id: r.id,
+      menuId: r.menu_id || null,
+      menuName: r.menu_name || '',
+      monthlyQty: Number(r.monthly_qty) || 0,
+      orderCycle: r.order_cycle || 'weekly'
+    }));
+
     renderIngT(); updateAllSel(); updateVendorLists();
     updateTdIngSel(); updateHistFilters();
     renderLqT(); renderSideA(); renderCpList();
@@ -3007,6 +3261,7 @@ async function loadAllData() {
     renderMonthlyAvg(); renderMonthlyRates();
     renderSalesHist();renderSalesChart();
     renderMenuList();
+    renderOrderInput(); renderOrderSheet();
     updateBadges();
     setSyncStatus('');
     toast('✅ 데이터 로드 완료');
@@ -3184,6 +3439,55 @@ async function delLiquorDB(id) {
   await fetch(`${SUPA_URL}/rest/v1/liquors?id=eq.${id}`, {
     method: 'DELETE',
     headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${accessToken || SUPA_KEY}` }
+  });
+}
+
+// ===== 발주 예측 DB CRUD =====
+async function saveMenuSaleToDB(entry){
+  if(!currentUser || !entry) return;
+  const isUpdate = !!entry._id;
+  const row = {
+    user_id: currentUser.id,
+    menu_id: entry.menuId || null,
+    menu_name: entry.menuName || '',
+    monthly_qty: parseInt(entry.monthlyQty) || 0,
+    order_cycle: entry.orderCycle || 'weekly',
+    updated_at: new Date().toISOString()
+  };
+  const url = isUpdate
+    ? `${SUPA_URL}/rest/v1/menu_sales?id=eq.${encodeURIComponent(entry._id)}`
+    : `${SUPA_URL}/rest/v1/menu_sales`;
+  try{
+    const res = await fetch(url, {
+      method: isUpdate ? 'PATCH' : 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${accessToken || SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(row)
+    });
+    if(!res.ok){
+      const text=await res.text();
+      console.error('[saveMenuSale] 실패', res.status, text);
+      if(/schema cache|menu_sales|relation.*does not exist/i.test(text)){
+        toast('⚠️ menu_sales 테이블이 없습니다 — DB 점검 모달을 확인하세요');
+        checkSchemaHealth(false);
+      }
+      return;
+    }
+    const data = await res.json();
+    if(Array.isArray(data) && data[0]) entry._id = data[0].id;
+  } catch(e){
+    console.error('[saveMenuSale] 네트워크 오류', e);
+  }
+}
+async function delMenuSaleDB(id){
+  if(!currentUser || !id) return;
+  await fetch(`${SUPA_URL}/rest/v1/menu_sales?id=eq.${id}`, {
+    method:'DELETE',
+    headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${accessToken || SUPA_KEY}`}
   });
 }
 
