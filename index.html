@@ -267,6 +267,12 @@ tbody tr:hover td{background:var(--surface2)}
     <div class="tw"><table><thead><tr><th>메뉴명</th><th>채널</th><th>판매가</th><th>홀 원가율</th><th>배달 원가율</th><th>기준</th><th>상태</th><th></th></tr></thead>
     <tbody id="d-table"><tr class="empty"><td colspan="8">메뉴 레시피 탭에서 메뉴를 추가하세요</td></tr></tbody></table></div>
   </div>
+  <div class="card">
+    <div class="card-title"><span class="card-dot"></span>🎯 목표 원가율 vs 실제 원가율</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">현재 적용 중인 단가 기준(<span id="tv-mode-label">기본</span>)으로 비교합니다. 실제 원가율이 높은 순으로 정렬됩니다.</div>
+    <div class="metrics" id="tv-summary" style="margin-bottom:14px"></div>
+    <div id="tv-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px"></div>
+  </div>
 </div>
 
 <!-- 단가 관리 -->
@@ -2362,7 +2368,9 @@ function renderDash(){
   let filtered=menus;if(dashFilter==='hall')filtered=menus.filter(m=>m.ch!=='delivery');else if(dashFilter==='del')filtered=menus.filter(m=>m.ch!=='hall');
   if(!menus.length){
     el.innerHTML=`<div class="mc"><div class="ml">등록 메뉴</div><div class="mv">0</div></div><div class="mc"><div class="ml">홀 평균 원가율</div><div class="mv">—</div></div><div class="mc"><div class="ml">배달 평균 원가율</div><div class="mv">—</div></div><div class="mc"><div class="ml">밑반찬 원가/인</div><div class="mv">${fmt(getSide())}</div><div class="ms">원</div></div>`;
-    tb.innerHTML='<tr class="empty"><td colspan="8">메뉴 레시피 탭에서 메뉴를 추가하세요</td></tr>';return;
+    tb.innerHTML='<tr class="empty"><td colspan="8">메뉴 레시피 탭에서 메뉴를 추가하세요</td></tr>';
+    renderTargetVsActual([], [], '기본');
+    return;
   }
   const rates=filtered.map(m=>calcMenuRates(m,overridePU));
   const hallRates=rates.filter((_,i)=>filtered[i].ch!=='delivery').map(r=>r.hallRate);
@@ -2378,6 +2386,75 @@ function renderDash(){
     const rc=v=>v<=m.target?'var(--accent)':v<=m.target*1.15?'var(--warn)':'var(--danger)';
     const worst=m.ch==='hall'?r.hallRate:m.ch==='delivery'?r.delRate:Math.max(r.hallRate,r.delRate);
     return `<tr><td style="font-weight:700">${m.name}</td><td><span class="badge ${chB[m.ch]}">${chl[m.ch]}</span></td><td style="font-family:'DM Mono',monospace">${fmt(m.hallPrice)}원</td><td style="font-weight:700;color:${m.ch!=='delivery'?rc(r.hallRate):'var(--text3)'}">${m.ch!=='delivery'?fd(r.hallRate,1)+'%':'—'}</td><td style="font-weight:700;color:${m.ch!=='hall'?rc(r.delRate):'var(--text3)'}">${m.ch!=='hall'?fd(r.delRate,1)+'%':'—'}</td><td><span class="badge b-gray" style="font-size:10px">${modeLabel}</span></td><td><span class="badge ${worst<=m.target?'b-ok':worst<=m.target*1.15?'b-warn':'b-danger'}">${worst<=m.target?'목표달성':worst<=m.target*1.15?'주의':'초과'}</span></td><td style="display:flex;gap:4px"><button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="openMenuEdit(${mi})">수정</button><button class="del-btn" onclick="delMenu(${mi})">×</button></td></tr>`;
+  }).join('');
+  renderTargetVsActual(filtered, rates, modeLabel);
+}
+
+// 🎯 목표 원가율 vs 실제 원가율 비교 섹션
+function renderTargetVsActual(filtered, rates, modeLabel){
+  const sumEl=document.getElementById('tv-summary');
+  const cardEl=document.getElementById('tv-cards');
+  const lbEl=document.getElementById('tv-mode-label');
+  if(!sumEl||!cardEl) return;
+  if(lbEl) lbEl.textContent=modeLabel||'기본';
+  if(!filtered||!filtered.length){
+    sumEl.innerHTML='';
+    cardEl.innerHTML='<div style="grid-column:1/-1;text-align:center;color:var(--text3);padding:20px;font-size:13px">표시할 메뉴가 없습니다</div>';
+    return;
+  }
+  // 채널에 맞는 actual rate 선택 (홀+배달은 worst 사용)
+  const rows = filtered.map((m,idx)=>{
+    const r=rates[idx];
+    let actual;
+    if(m.ch==='hall') actual=r.hallRate;
+    else if(m.ch==='delivery') actual=r.delRate;
+    else actual=Math.max(r.hallRate, r.delRate);
+    return { m, actual, target:Number(m.target)||0 };
+  }).filter(x=>x.actual>0);
+  // 실제 원가율 높은 순 정렬
+  rows.sort((a,b)=>b.actual-a.actual);
+
+  // 요약 지표
+  const n=rows.length;
+  const avgT = n? rows.reduce((s,x)=>s+x.target,0)/n : 0;
+  const avgA = n? rows.reduce((s,x)=>s+x.actual,0)/n : 0;
+  const over = rows.filter(x=>x.actual>x.target).length;
+  const diff = avgA-avgT;
+  const diffClr = diff<=0?'var(--accent)':diff<=2?'var(--warn)':'var(--danger)';
+  const diffArrow = diff===0?'—':diff>0?'▲':'▼';
+  sumEl.innerHTML=`
+    <div class="mc"><div class="ml">평균 목표 원가율</div><div class="mv">${n?fd(avgT,1)+'%':'—'}</div></div>
+    <div class="mc ${avgA<=avgT?'ok':avgA<=avgT*1.15?'warn':'danger'}"><div class="ml">평균 실제 원가율</div><div class="mv">${n?fd(avgA,1)+'%':'—'}</div><div class="ms" style="color:${diffClr}">${diffArrow} ${fd(Math.abs(diff),1)}%p</div></div>
+    <div class="mc ${over?'danger':'ok'}"><div class="ml">목표 초과 메뉴</div><div class="mv">${over}</div><div class="ms">/ ${n}개</div></div>`;
+
+  // 카드
+  cardEl.innerHTML = rows.map(({m,actual,target})=>{
+    const d=actual-target;
+    let status, statBg, statClr, border;
+    if(actual<=target){ status='목표달성'; statBg='var(--accent-l)'; statClr='var(--accent)'; border='var(--accent)'; }
+    else if(actual<=target*1.15){ status='주의'; statBg='var(--warn-l)'; statClr='var(--warn)'; border='var(--warn)'; }
+    else { status='초과'; statBg='var(--danger-l)'; statClr='var(--danger)'; border='var(--danger)'; }
+    const arrow = d===0?'—':d>0?'▲':'▼';
+    const diffClr2 = d<=0?'var(--accent)':d<=target*0.15?'var(--warn)':'var(--danger)';
+    const chl={'hall':'홀','delivery':'배달','both':'홀+배달'};
+    const chB={'hall':'b-hall','delivery':'b-del','both':'b-both'};
+    return `<div style="border:1px solid var(--border);border-left:4px solid ${border};border-radius:8px;padding:12px 14px;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+        <div style="font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis">${m.name}</div>
+        <span class="badge" style="background:${statBg};color:${statClr};font-size:11px;font-weight:700;flex-shrink:0">${status}</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <span class="badge ${chB[m.ch]||'b-gray'}" style="font-size:10px">${chl[m.ch]||m.ch}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+        <div><div style="color:var(--text3);font-size:10px;margin-bottom:2px">목표</div><div style="font-family:'DM Mono',monospace;font-weight:700;color:var(--text2)">${fd(target,1)}%</div></div>
+        <div><div style="color:var(--text3);font-size:10px;margin-bottom:2px">실제</div><div style="font-family:'DM Mono',monospace;font-weight:700;color:${statClr}">${fd(actual,1)}%</div></div>
+      </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);font-size:12px;display:flex;justify-content:space-between;align-items:center">
+        <span style="color:var(--text3)">차이</span>
+        <span style="font-family:'DM Mono',monospace;font-weight:700;color:${diffClr2}">${arrow} ${fd(Math.abs(d),1)}%p</span>
+      </div>
+    </div>`;
   }).join('');
 }
 function delMenu(i){if(!confirm(`'${menus[i].name}' 삭제?`))return;menus.splice(i,1);renderDash();updateBadges();}
