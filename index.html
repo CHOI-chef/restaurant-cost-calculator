@@ -635,15 +635,25 @@ tbody tr:hover td{background:var(--surface2)}
     <div class="row">
       <div class="fg"><div class="fl">한 단위(병/캔) 용량</div><input id="lq-vol" type="number" placeholder="숫자"></div>
       <div class="fg" style="max-width:90px"><div class="fl">단위</div><select id="lq-vu" onchange="updateLqVuLabel()"><option value="ml">ml</option><option value="L">L</option><option value="병">병</option></select></div>
-      <div class="fg"><div class="fl">한 단위 구매가 <span id="lq-price-auto" style="display:none;color:var(--accent);font-size:10px">(박스 자동)</span></div><input id="lq-price" type="number" placeholder="원"></div>
+      <div class="fg"><div class="fl">한 단위 구매가 <span id="lq-price-auto" style="display:none;color:var(--accent);font-size:10px">(박스 자동)</span></div><input id="lq-price" type="number" placeholder="원" oninput="updateLqNetPreview()"></div>
       <div class="fg"><div class="fl">판매가 (선택)</div><input id="lq-sell" type="number" placeholder="원"></div>
       <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addLiquor()">+ 등록</button></div>
     </div>
     <div class="row" style="background:var(--info-l);border:1px dashed var(--info);border-radius:6px;padding:10px 12px;margin-top:6px;align-items:center">
       <div style="font-size:12px;color:var(--info);font-weight:600;flex-shrink:0">📦 박스 단위로 구매하셨나요?</div>
-      <div class="fg" style="max-width:130px"><div class="fl">박스당 갯수</div><input id="lq-box-cnt" type="number" placeholder="예) 30" oninput="calcLqBoxPrice()"></div>
+      <div class="fg" style="max-width:130px"><div class="fl">박스당 갯수</div><input id="lq-box-cnt" type="number" placeholder="예) 30" oninput="calcLqBoxPrice();syncLqBpb()"></div>
       <div class="fg" style="max-width:160px"><div class="fl">1박스 가격</div><input id="lq-box-tot" type="number" placeholder="원" oninput="calcLqBoxPrice()"></div>
       <div id="lq-box-hint" style="font-size:11px;color:var(--text2);align-self:center">→ 한 단위 구매가가 자동 계산됩니다</div>
+    </div>
+    <div class="row" style="background:var(--warn-l);border:1px dashed var(--warn);border-radius:6px;padding:10px 12px;margin-top:6px;align-items:center">
+      <div style="font-size:12px;color:var(--warn);font-weight:600;flex-shrink:0">💰 공병/박스 보증금 (반납 시 환급)</div>
+      <div class="fg" style="max-width:100px"><div class="fl">용기 종류</div>
+        <select id="lq-container"><option value="병">병</option><option value="캔">캔</option><option value="기타">기타</option></select>
+      </div>
+      <div class="fg" style="max-width:130px"><div class="fl">병 보증금</div><input id="lq-dep-bottle" type="number" placeholder="예) 100" oninput="updateLqNetPreview()"></div>
+      <div class="fg" style="max-width:130px"><div class="fl">박스 보증금</div><input id="lq-dep-box" type="number" placeholder="원" oninput="updateLqNetPreview()"></div>
+      <div class="fg" style="max-width:110px"><div class="fl">병 입수(개)</div><input id="lq-bpb" type="number" placeholder="예) 30" oninput="updateLqNetPreview()"></div>
+      <div id="lq-net-hint" style="font-size:11px;color:var(--text2);align-self:center;flex:1;min-width:140px">→ 실질 원가 = 납품가 - 보증금</div>
     </div>
   </div>
   <div class="card">
@@ -859,10 +869,40 @@ function calcLqBoxPrice(){
     hint.innerHTML=`→ 한 단위 = <b>${fmt(Math.round(each))}원</b> (자동 계산됨)`;
     hint.style.color='var(--accent)';
     auto.style.display='inline';
+    updateLqNetPreview();
   } else {
     hint.textContent='→ 한 단위 구매가가 자동 계산됩니다';
     hint.style.color='var(--text2)';
     auto.style.display='none';
+  }
+}
+// 박스당 갯수 → 병 입수 자동 동기화 (병 입수 미입력 시)
+function syncLqBpb(){
+  const cnt=document.getElementById('lq-box-cnt').value;
+  const bpb=document.getElementById('lq-bpb');
+  if(cnt && !bpb.value) bpb.value=cnt;
+  updateLqNetPreview();
+}
+// 한 병당 실질 원가 = 한 병 구매가 - 병 보증금 - (박스 보증금 / 병 입수)
+function calcNetPerBottle(price, depBottle, depBox, bpb){
+  const p=Number(price)||0, db=Number(depBottle)||0, dx=Number(depBox)||0, n=Number(bpb)||0;
+  return p - db - (n>0?dx/n:0);
+}
+function updateLqNetPreview(){
+  const price=parseFloat(document.getElementById('lq-price').value)||0;
+  const db=parseFloat(document.getElementById('lq-dep-bottle').value)||0;
+  const dx=parseFloat(document.getElementById('lq-dep-box').value)||0;
+  const bpb=parseFloat(document.getElementById('lq-bpb').value)||0;
+  const hint=document.getElementById('lq-net-hint');
+  if(!hint) return;
+  if(price && (db||dx)){
+    const net=calcNetPerBottle(price,db,dx,bpb);
+    const saved=price-net;
+    hint.innerHTML=`→ 실질 한 단위 원가 <b style="color:var(--accent)">${fmt(Math.round(net))}원</b> <span style="color:var(--text3)">(보증금 -${fmt(Math.round(saved))}원)</span>`;
+    hint.style.color='var(--text2)';
+  } else {
+    hint.innerHTML='→ 실질 원가 = 납품가 - 보증금';
+    hint.style.color='var(--text2)';
   }
 }
 function updateVendorLists(){
@@ -1257,6 +1297,34 @@ const SCHEMA_MIGRATIONS = [
     column: 'aliases',
     sql: "ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS aliases jsonb DEFAULT '[]'::jsonb;",
     desc: '식재료 별칭 — OCR/검색 자동 매칭'
+  },
+  {
+    id: 'liquors_deposit_per_bottle',
+    table: 'liquors',
+    column: 'deposit_per_bottle',
+    sql: "ALTER TABLE liquors ADD COLUMN IF NOT EXISTS deposit_per_bottle numeric DEFAULT 0;",
+    desc: '주류 공병 보증금 (개당 환급액)'
+  },
+  {
+    id: 'liquors_box_deposit',
+    table: 'liquors',
+    column: 'box_deposit',
+    sql: "ALTER TABLE liquors ADD COLUMN IF NOT EXISTS box_deposit numeric DEFAULT 0;",
+    desc: '주류 박스 보증금 (박스당 환급액)'
+  },
+  {
+    id: 'liquors_bottles_per_box',
+    table: 'liquors',
+    column: 'bottles_per_box',
+    sql: "ALTER TABLE liquors ADD COLUMN IF NOT EXISTS bottles_per_box integer DEFAULT 1;",
+    desc: '주류 1박스당 병 입수'
+  },
+  {
+    id: 'liquors_container_type',
+    table: 'liquors',
+    column: 'container_type',
+    sql: "ALTER TABLE liquors ADD COLUMN IF NOT EXISTS container_type text DEFAULT '병';",
+    desc: '주류 용기 종류 (병/캔/기타)'
   }
 ];
 
@@ -1691,20 +1759,27 @@ async function addLiquor(){
   const vu=document.getElementById('lq-vu').value;
   const price=parseFloat(document.getElementById('lq-price').value);
   const sell=parseFloat(document.getElementById('lq-sell').value)||0;
+  const containerType=document.getElementById('lq-container').value||'병';
+  const depositPerBottle=parseFloat(document.getElementById('lq-dep-bottle').value)||0;
+  const boxDeposit=parseFloat(document.getElementById('lq-dep-box').value)||0;
+  const bottlesPerBox=parseInt(document.getElementById('lq-bpb').value)||1;
   if(!name||!volume||!price)return alert('주류명, 용량, 가격을 입력해주세요');
   // vu='L'이면 ml 환산. vu='병'은 입력값이 한 병의 ml로 간주(ml과 동일 처리)
   const volMl = vu==='L' ? volume*1000 : volume;
-  const perMl = volMl>0 ? price/volMl : 0;
-  const item={name,vendor,uname,volume,vu,price,sell,perMl};
+  const netPrice = calcNetPerBottle(price,depositPerBottle,boxDeposit,bottlesPerBox);
+  const perMl = volMl>0 ? netPrice/volMl : 0;
+  const item={name,vendor,uname,volume,vu,price,sell,perMl,containerType,depositPerBottle,boxDeposit,bottlesPerBox,netPrice};
   liquors.push(item);
-  ['lq-name','lq-vendor','lq-uname','lq-vol','lq-price','lq-sell','lq-box-cnt','lq-box-tot'].forEach(id=>document.getElementById(id).value='');
+  ['lq-name','lq-vendor','lq-uname','lq-vol','lq-price','lq-sell','lq-box-cnt','lq-box-tot','lq-dep-bottle','lq-dep-box','lq-bpb'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('lq-vsel').value='';
   document.getElementById('lq-unamesel').value='';
   document.getElementById('lq-vu').value='ml';
+  document.getElementById('lq-container').value='병';
   document.getElementById('lq-price-auto').style.display='none';
   document.getElementById('lq-box-hint').textContent='→ 한 단위 구매가가 자동 계산됩니다';
   document.getElementById('lq-box-hint').style.color='var(--text2)';
   updateLqVuLabel();
+  updateLqNetPreview();
   renderLqT();updateAllSel();updateVendorLists();updateBadges();toast('주류 등록 완료');
   if(currentUser){setSyncStatus('저장 중...');await saveLiquorToDB(item);setSyncStatus('');}
 }
@@ -1714,6 +1789,66 @@ async function delLiquor(i){
   liquors.splice(i,1);
   renderLqT();updateAllSel();updateVendorLists();updateBadges();
   if(currentUser&&item._id){await delLiquorDB(item._id);}
+}
+function openLqEdit(i){
+  const g=liquors[i];
+  document.getElementById('edit-lq-idx').value=i;
+  document.getElementById('edit-lq-name').value=g.name||'';
+  document.getElementById('edit-lq-vendor').value=g.vendor||'';
+  document.getElementById('edit-lq-uname').value=g.uname||'1병';
+  document.getElementById('edit-lq-vol').value=g.volume||'';
+  document.getElementById('edit-lq-vu').value=g.vu||'ml';
+  document.getElementById('edit-lq-price').value=g.price||'';
+  document.getElementById('edit-lq-sell').value=g.sell||'';
+  document.getElementById('edit-lq-container').value=g.containerType||'병';
+  document.getElementById('edit-lq-dep-bottle').value=g.depositPerBottle||'';
+  document.getElementById('edit-lq-dep-box').value=g.boxDeposit||'';
+  document.getElementById('edit-lq-bpb').value=g.bottlesPerBox||'';
+  updateEditLqPreview();
+  document.getElementById('lq-edit-modal').style.display='flex';
+}
+function closeLqEdit(){document.getElementById('lq-edit-modal').style.display='none';}
+function updateEditLqPreview(){
+  const price=parseFloat(document.getElementById('edit-lq-price').value)||0;
+  const db=parseFloat(document.getElementById('edit-lq-dep-bottle').value)||0;
+  const dx=parseFloat(document.getElementById('edit-lq-dep-box').value)||0;
+  const bpb=parseFloat(document.getElementById('edit-lq-bpb').value)||0;
+  const vol=parseFloat(document.getElementById('edit-lq-vol').value)||0;
+  const vu=document.getElementById('edit-lq-vu').value;
+  const el=document.getElementById('edit-lq-preview');
+  if(!price||!vol){el.style.display='none';return;}
+  const volMl=vu==='L'?vol*1000:vol;
+  const net=calcNetPerBottle(price,db,dx,bpb);
+  const perMl=volMl>0?net/volMl:0;
+  const hasDep=db>0||dx>0;
+  el.style.display='block';
+  el.innerHTML = hasDep
+    ? `실질 한 단위 ${fmt(Math.round(net))}원 (보증금 -${fmt(Math.round(price-net))}원) · ml당 ${fd(perMl,2)}원`
+    : `한 단위 ${fmt(price)}원 · ml당 ${fd(perMl,2)}원`;
+}
+async function saveLqEdit(){
+  const i=parseInt(document.getElementById('edit-lq-idx').value);
+  const g=liquors[i];
+  if(!g) return closeLqEdit();
+  const name=document.getElementById('edit-lq-name').value.trim();
+  const vendor=document.getElementById('edit-lq-vendor').value.trim()||'미지정';
+  const uname=document.getElementById('edit-lq-uname').value.trim()||'1병';
+  const volume=parseFloat(document.getElementById('edit-lq-vol').value);
+  const vu=document.getElementById('edit-lq-vu').value;
+  const price=parseFloat(document.getElementById('edit-lq-price').value);
+  const sell=parseFloat(document.getElementById('edit-lq-sell').value)||0;
+  const containerType=document.getElementById('edit-lq-container').value||'병';
+  const depositPerBottle=parseFloat(document.getElementById('edit-lq-dep-bottle').value)||0;
+  const boxDeposit=parseFloat(document.getElementById('edit-lq-dep-box').value)||0;
+  const bottlesPerBox=parseInt(document.getElementById('edit-lq-bpb').value)||1;
+  if(!name||!volume||!price) return alert('주류명, 용량, 가격을 입력해주세요');
+  const volMl=vu==='L'?volume*1000:volume;
+  const netPrice=calcNetPerBottle(price,depositPerBottle,boxDeposit,bottlesPerBox);
+  const perMl=volMl>0?netPrice/volMl:0;
+  Object.assign(g,{name,vendor,uname,volume,vu,price,sell,perMl,containerType,depositPerBottle,boxDeposit,bottlesPerBox,netPrice});
+  closeLqEdit();
+  renderLqT();updateAllSel();updateVendorLists();updateBadges();toast('주류 수정 완료');
+  if(currentUser){setSyncStatus('저장 중...');await saveLiquorToDB(g);setSyncStatus('');}
 }
 let liquorDispUnit='ml';
 function setLqDispUnit(u,el){
@@ -1745,16 +1880,26 @@ function renderLqT(){
     } else {
       perCell=`${fd(g.perMl,2)}원<span style="color:var(--text3);font-size:10px">/ml</span>`;
     }
+    // 보증금 정보 sub-line
+    const hasDeposit = (g.depositPerBottle||0)>0 || (g.boxDeposit||0)>0;
+    const netPrice = hasDeposit ? calcNetPerBottle(g.price, g.depositPerBottle, g.boxDeposit, g.bottlesPerBox||1) : g.price;
+    const depParts=[];
+    if(g.depositPerBottle) depParts.push(`병 ${fmt(g.depositPerBottle)}원`);
+    if(g.boxDeposit) depParts.push(`박스 ${fmt(g.boxDeposit)}원/${g.bottlesPerBox||1}개`);
+    const depLine = hasDeposit
+      ? `<div style="font-size:10px;color:var(--warn);margin-top:2px">💰 ${depParts.join(' · ')}</div><div style="font-size:10px;color:var(--accent);font-weight:600">실질 ${fmt(Math.round(netPrice))}원/${g.uname||'1병'}</div>`
+      : '';
+    const ctype = g.containerType||'병';
     return `<tr>
-      <td style="font-weight:600">${g.name}</td>
+      <td style="font-weight:600">${g.name}<div style="font-size:10px;color:var(--text3);margin-top:2px">${ctype}</div></td>
       <td><span class="vtag">${g.vendor}</span></td>
       <td><span class="badge b-warn" style="font-size:11px">${g.uname||'1병'}</span></td>
       <td>${fmt(g.volume)}${g.vu}</td>
-      <td style="font-family:'DM Mono',monospace;font-weight:600">${fmt(g.price)}원<span style="color:var(--text3);font-size:10px"> /${g.uname||'1병'}</span></td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600">${fmt(g.price)}원<span style="color:var(--text3);font-size:10px"> /${g.uname||'1병'}</span>${depLine}</td>
       <td style="font-family:'DM Mono',monospace;font-weight:600">${perCell}</td>
       <td>${g.sell?fmt(g.sell)+'원':'—'}</td>
       <td style="color:${rc};font-weight:600">${rate?fd(rate,1)+'%':'—'}</td>
-      <td><button class="del-btn" onclick="delLiquor(${i})">×</button></td>
+      <td style="white-space:nowrap"><button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px;margin-right:4px" onclick="openLqEdit(${i})">수정</button><button class="del-btn" onclick="delLiquor(${i})">×</button></td>
     </tr>`;
   }).join('');
 }
@@ -2685,17 +2830,30 @@ async function loadAllData() {
       cost: Number(r.cost_per_serving) || 0, method: r.method || ''
     }));
 
-    liquors = (Array.isArray(liq) ? liq : []).map(r => ({
-      _id: r.id, id: r.id,
-      name: r.name || '', vendor: r.vendor || '',
-      unit: r.unit || '', uname: r.unit || '1병',
-      ml: Number(r.volume_ml) || 0, vu: 'ml',
-      price: Number(r.purchase_price) || 0,
-      sell: Number(r.sale_price) || 0,
-      volume: Number(r.volume_ml) || 0,
-      buyPrice: Number(r.purchase_price) || 0,
-      perMl: r.volume_ml ? Number(r.purchase_price) / Number(r.volume_ml) : 0
-    }));
+    liquors = (Array.isArray(liq) ? liq : []).map(r => {
+      const price = Number(r.purchase_price) || 0;
+      const depB = Number(r.deposit_per_bottle) || 0;
+      const depX = Number(r.box_deposit) || 0;
+      const bpb = parseInt(r.bottles_per_box) || 1;
+      const netPrice = price - depB - (bpb>0 ? depX/bpb : 0);
+      const volMl = Number(r.volume_ml) || 0;
+      return {
+        _id: r.id, id: r.id,
+        name: r.name || '', vendor: r.vendor || '',
+        unit: r.unit || '', uname: r.unit || '1병',
+        ml: volMl, vu: 'ml',
+        price: price,
+        sell: Number(r.sale_price) || 0,
+        volume: volMl,
+        buyPrice: price,
+        containerType: r.container_type || '병',
+        depositPerBottle: depB,
+        boxDeposit: depX,
+        bottlesPerBox: bpb,
+        netPrice: netPrice,
+        perMl: volMl ? netPrice / volMl : 0
+      };
+    });
 
     sideA = (Array.isArray(side) ? side : []).map(r => ({
       _id: r.id, id: r.id,
@@ -2881,7 +3039,11 @@ async function saveLiquorToDB(item) {
     unit: item.uname || '1병',
     volume_ml: volMl,
     purchase_price: Number(item.price) || 0,
-    sale_price: Number(item.sell) || 0
+    sale_price: Number(item.sell) || 0,
+    container_type: item.containerType || '병',
+    deposit_per_bottle: Number(item.depositPerBottle) || 0,
+    box_deposit: Number(item.boxDeposit) || 0,
+    bottles_per_box: parseInt(item.bottlesPerBox) || 1
   };
   const url = isUpdate
     ? `${SUPA_URL}/rest/v1/liquors?id=eq.${encodeURIComponent(item._id)}`
@@ -3050,6 +3212,41 @@ updateBadges();
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="closeCpEdit()">취소</button>
       <button class="btn btn-p" onclick="saveCpEdit()">수정 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 주류 수정 모달 -->
+<div id="lq-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:28px;width:640px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto">
+    <div style="font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text)">주류 수정</div>
+    <input type="hidden" id="edit-lq-idx">
+    <div class="row" style="margin-bottom:10px">
+      <div class="fg f2"><div class="fl">주류명</div><input id="edit-lq-name"></div>
+      <div class="fg f2"><div class="fl">업체명</div><input id="edit-lq-vendor"></div>
+      <div class="fg"><div class="fl">단위명</div><input id="edit-lq-uname" placeholder="예) 1병"></div>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="fg"><div class="fl">한 단위 용량</div><input id="edit-lq-vol" type="number" oninput="updateEditLqPreview()"></div>
+      <div class="fg" style="max-width:80px"><div class="fl">용량 단위</div>
+        <select id="edit-lq-vu" onchange="updateEditLqPreview()"><option value="ml">ml</option><option value="L">L</option><option value="병">병</option></select>
+      </div>
+      <div class="fg"><div class="fl">한 단위 구매가</div><input id="edit-lq-price" type="number" oninput="updateEditLqPreview()"></div>
+      <div class="fg"><div class="fl">판매가 (선택)</div><input id="edit-lq-sell" type="number"></div>
+    </div>
+    <div class="row" style="background:var(--warn-l);border:1px dashed var(--warn);border-radius:6px;padding:10px 12px;margin-bottom:10px;align-items:center">
+      <div style="font-size:12px;color:var(--warn);font-weight:600;flex-shrink:0">💰 보증금</div>
+      <div class="fg" style="max-width:100px"><div class="fl">용기 종류</div>
+        <select id="edit-lq-container"><option value="병">병</option><option value="캔">캔</option><option value="기타">기타</option></select>
+      </div>
+      <div class="fg" style="max-width:120px"><div class="fl">병 보증금</div><input id="edit-lq-dep-bottle" type="number" oninput="updateEditLqPreview()"></div>
+      <div class="fg" style="max-width:120px"><div class="fl">박스 보증금</div><input id="edit-lq-dep-box" type="number" oninput="updateEditLqPreview()"></div>
+      <div class="fg" style="max-width:110px"><div class="fl">병 입수(개)</div><input id="edit-lq-bpb" type="number" oninput="updateEditLqPreview()"></div>
+    </div>
+    <div id="edit-lq-preview" style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:16px;padding:8px 12px;background:var(--accent-l);border-radius:6px;display:none"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeLqEdit()">취소</button>
+      <button class="btn btn-p" onclick="saveLqEdit()">수정 저장</button>
     </div>
   </div>
 </div>
