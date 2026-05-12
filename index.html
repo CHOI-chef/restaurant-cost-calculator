@@ -2235,6 +2235,27 @@ function onMenuSaleInput(inputEl){
   }, 800);
 }
 
+// 중복 menu_sales 행 제거 (동일 menuName당 monthlyQty 큰 것만 유지)
+// → 발주 계산 시 중복 합산 방지. DB에 unique 제약이 없어 누적될 수 있음.
+function _dedupedMenuSales(arr){
+  if(!Array.isArray(arr) || arr.length<=1) return arr || [];
+  const sorted = [...arr].sort((a,b)=>(Number(b.monthlyQty)||0)-(Number(a.monthlyQty)||0));
+  const seen = new Map();
+  for(const s of sorted){
+    const k = (s.menuName||'').trim();
+    if(!k) continue;
+    if(!seen.has(k)) seen.set(k, s);
+  }
+  return Array.from(seen.values());
+}
+// 발주 수량 표시: g→kg, ml→L 자동 환산 (1000 이상)
+function _fmtQty(qty, unit){
+  if(qty == null || isNaN(qty)) return '—';
+  if(unit==='g'  && qty>=1000) return `${fd(qty/1000,2)} kg`;
+  if(unit==='ml' && qty>=1000) return `${fd(qty/1000,2)} L`;
+  return `${fd(qty,1)} ${unit||''}`;
+}
+
 // 메뉴 1번 분량을 재료 단위까지 펼쳐서 demand 맵에 누적
 function _expandRecipeItem(it, factor, demand){
   const t = it.type || it.rtype || '';
@@ -2264,14 +2285,24 @@ function _expandRecipeItem(it, factor, demand){
   }
 }
 function calcOrderDemand(){
+  // 방어적 dedupe — DB에 중복 행이 남아있어도 메모리 단위에서 차단
+  const list = _dedupedMenuSales(menuSales);
   const demand = new Map();
-  menuSales.forEach(s=>{
+  const diag = [];
+  list.forEach(s=>{
     const m = menus.find(x => (s.menuId && (x.id===s.menuId||x._id===s.menuId)) || x.name===s.menuName);
     if(!m || !s.monthlyQty) return;
-    const daily = (Number(s.monthlyQty)||0)/30;
-    const factor = daily * cycleDays(s.orderCycle); // 메뉴 1단위 들어가는 양 × 발주 일수
+    const monthly = Number(s.monthlyQty)||0;
+    const daily = monthly/30;
+    const cyc = cycleDays(s.orderCycle);
+    const factor = daily * cyc; // (월판매량/30) × 발주주기일수 = 발주 1회분 메뉴 수
+    diag.push({menu:m.name, monthlyQty:monthly, daily:Number(daily.toFixed(2)), cycleDays:cyc, factor:Number(factor.toFixed(2))});
     (m.items||[]).forEach(it => _expandRecipeItem(it, factor, demand));
   });
+  if(diag.length){
+    // DevTools 콘솔에서 메뉴별 factor 확인 가능 — 계산이 이상하면 여기 값부터 점검
+    try { console.groupCollapsed('[발주 예측] 메뉴별 factor'); console.table(diag); console.groupEnd(); } catch(e){}
+  }
   return Array.from(demand.values());
 }
 function renderOrderSheet(){
@@ -2307,10 +2338,10 @@ function renderOrderSheet(){
         <thead><tr><th>재료명</th><th>종류</th><th style="text-align:right">발주 수량</th><th>단위</th><th style="text-align:right">단가</th><th style="text-align:right">예상 금액</th></tr></thead>
         <tbody>${items.map(r=>{
           const kindBadge = r.kind==='주류'?'b-warn':r.kind==='식재료'?'b-gray':'b-info';
-          let qtyDisplay=`${fd(r.qty,1)} ${r.unit}`;
+          let qtyDisplay = _fmtQty(r.qty, r.unit);
           if(r.kind==='주류' && r.bottleVol>0){
             const bottles = r.qty / r.bottleVol;
-            qtyDisplay = `${fd(r.qty,0)} ml<br><span style="color:var(--text3);font-size:11px">≈ ${fd(bottles,1)} ${r.uname||'1병'}</span>`;
+            qtyDisplay = `${_fmtQty(r.qty,'ml')}<br><span style="color:var(--text3);font-size:11px">≈ ${fd(bottles,1)} ${r.uname||'1병'}</span>`;
           }
           return `<tr>
             <td style="font-weight:600">${r.name}</td>
@@ -3437,6 +3468,20 @@ async function loadAllData() {
       monthlyQty: Number(r.monthly_qty) || 0,
       orderCycle: r.order_cycle || 'weekly'
     }));
+    // menu_sales 중복 행 자동 정리 — 발주 계산 시 중복 합산되어 금액이 N배 부풀려지는 문제 방지
+    // (DB에 (user_id, menu_name) unique 제약이 없으므로 누적 가능)
+    {
+      const keep = _dedupedMenuSales(menuSales);
+      if(keep.length < menuSales.length){
+        const keepIds = new Set(keep.map(s => s._id).filter(Boolean));
+        const extras = menuSales.filter(s => s._id && !keepIds.has(s._id));
+        console.warn(`[menuSales] 중복 행 ${extras.length}개 발견 — DB에서 자동 정리 시작`,
+          extras.map(e=>({_id:e._id, name:e.menuName, qty:e.monthlyQty})));
+        for(const e of extras){ delMenuSaleDB(e._id).catch(err=>console.error('delMenuSaleDB', err)); }
+        menuSales = keep;
+        toast(`발주 데이터 중복 ${extras.length}건 정리됨`);
+      }
+    }
 
     renderIngT(); updateAllSel(); updateVendorLists();
     updateTdIngSel(); updateHistFilters();
@@ -3629,43 +3674,51 @@ async function delLiquorDB(id) {
 // ===== 발주 예측 DB CRUD =====
 async function saveMenuSaleToDB(entry){
   if(!currentUser || !entry) return;
-  const isUpdate = !!entry._id;
-  const row = {
-    user_id: currentUser.id,
-    menu_id: entry.menuId || null,
-    menu_name: entry.menuName || '',
-    monthly_qty: parseInt(entry.monthlyQty) || 0,
-    order_cycle: entry.orderCycle || 'weekly',
-    updated_at: new Date().toISOString()
-  };
-  const url = isUpdate
-    ? `${SUPA_URL}/rest/v1/menu_sales?id=eq.${encodeURIComponent(entry._id)}`
-    : `${SUPA_URL}/rest/v1/menu_sales`;
-  try{
-    const res = await fetch(url, {
-      method: isUpdate ? 'PATCH' : 'POST',
-      headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': `Bearer ${accessToken || SUPA_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(row)
-    });
-    if(!res.ok){
-      const text=await res.text();
-      console.error('[saveMenuSale] 실패', res.status, text);
-      if(/schema cache|menu_sales|relation.*does not exist/i.test(text)){
-        toast('⚠️ menu_sales 테이블이 없습니다 — DB 점검 모달을 확인하세요');
-        checkSchemaHealth(false);
+  // 동일 entry에 대한 동시 저장 직렬화 — 첫 저장이 _id를 설정한 뒤 후속 저장이 PATCH로 진행되도록 보장
+  // (이게 없으면 둘 다 _id 없음으로 POST → 중복 행 생성)
+  if(entry._saving){ try { await entry._saving; } catch(e){} }
+  const promise = (async ()=>{
+    const isUpdate = !!entry._id;
+    const row = {
+      user_id: currentUser.id,
+      menu_id: entry.menuId || null,
+      menu_name: entry.menuName || '',
+      monthly_qty: parseInt(entry.monthlyQty) || 0,
+      order_cycle: entry.orderCycle || 'weekly',
+      updated_at: new Date().toISOString()
+    };
+    const url = isUpdate
+      ? `${SUPA_URL}/rest/v1/menu_sales?id=eq.${encodeURIComponent(entry._id)}`
+      : `${SUPA_URL}/rest/v1/menu_sales`;
+    try{
+      const res = await fetch(url, {
+        method: isUpdate ? 'PATCH' : 'POST',
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': `Bearer ${accessToken || SUPA_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(row)
+      });
+      if(!res.ok){
+        const text=await res.text();
+        console.error('[saveMenuSale] 실패', res.status, text);
+        if(/schema cache|menu_sales|relation.*does not exist/i.test(text)){
+          toast('⚠️ menu_sales 테이블이 없습니다 — DB 점검 모달을 확인하세요');
+          checkSchemaHealth(false);
+        }
+        return;
       }
-      return;
+      const data = await res.json();
+      if(Array.isArray(data) && data[0]) entry._id = data[0].id;
+    } catch(e){
+      console.error('[saveMenuSale] 네트워크 오류', e);
     }
-    const data = await res.json();
-    if(Array.isArray(data) && data[0]) entry._id = data[0].id;
-  } catch(e){
-    console.error('[saveMenuSale] 네트워크 오류', e);
-  }
+  })();
+  entry._saving = promise;
+  try { return await promise; }
+  finally { if(entry._saving === promise) entry._saving = null; }
 }
 async function delMenuSaleDB(id){
   if(!currentUser || !id) return;
