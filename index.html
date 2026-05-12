@@ -6,6 +6,7 @@
 <title>요식업 원가 계산기 v3 — 2026.03.25</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap');
 :root{
@@ -380,8 +381,13 @@ tbody tr:hover td{background:var(--surface2)}
 
 <!-- 월 매출 -->
 <div class="page" id="p-sales">
-  <div class="page-title">월 매출 분석</div>
-  <div class="page-desc">카드매출과 배달앱별 매출을 입력하면 식재료비 비율이 자동 계산됩니다</div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+    <div>
+      <div class="page-title">월 매출 분석</div>
+      <div class="page-desc">카드매출과 배달앱별 매출을 입력하면 식재료비 비율이 자동 계산됩니다</div>
+    </div>
+    <button class="btn btn-sm" onclick="exportSalesXlsx()" title="월별 매출 이력을 엑셀로 다운로드">📥 엑셀 다운로드</button>
+  </div>
   <div class="card">
     <div class="card-title"><span class="card-dot"></span>이달 매출 입력</div>
     <div class="notice n-info">현금 매출이 있다면 카드 매출에 합산해서 입력해주세요</div>
@@ -433,8 +439,13 @@ tbody tr:hover td{background:var(--surface2)}
 
 <!-- 식재료 -->
 <div class="page" id="p-ingr">
-  <div class="page-title">식재료 단가</div>
-  <div class="page-desc">업체별·단위별로 등록하면 g당 원가로 자동 환산되고 최저가를 비교해드려요</div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+    <div>
+      <div class="page-title">식재료 단가</div>
+      <div class="page-desc">업체별·단위별로 등록하면 g당 원가로 자동 환산되고 최저가를 비교해드려요</div>
+    </div>
+    <button class="btn btn-sm" onclick="exportIngredientsXlsx()" title="현재 등록된 식재료를 엑셀로 다운로드">📥 엑셀 다운로드</button>
+  </div>
   <div class="card">
     <div class="card-title"><span class="card-dot"></span>새 식재료 등록</div>
     <div class="notice n-info">대분류로 묶으면 레시피에서 그룹으로 선택 가능해요 (예: 대분류 "참기름" → 오뚜기/방앗간/대용량)</div>
@@ -779,8 +790,13 @@ tbody tr:hover td{background:var(--surface2)}
 
 <!-- 메뉴 레시피 -->
 <div class="page" id="p-menu">
-  <div class="page-title">메뉴 레시피</div>
-  <div class="page-desc">식재료·자체제조·주류를 조합해 메뉴별 원가율을 계산하세요</div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+    <div>
+      <div class="page-title">메뉴 레시피</div>
+      <div class="page-desc">식재료·자체제조·주류를 조합해 메뉴별 원가율을 계산하세요</div>
+    </div>
+    <button class="btn btn-sm" onclick="exportMenusXlsx()" title="현재 저장된 메뉴 원가를 엑셀로 다운로드">📥 엑셀 다운로드</button>
+  </div>
   <!-- 저장된 메뉴 목록 -->
   <div class="card" id="menu-list-card">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
@@ -3556,6 +3572,72 @@ async function saveMenuToDB(item) {
   if (item._id) row.id = item._id;
   const { data, error } = await sb.from('menus').upsert(row).select().single();
   if (!error && data) item._id = data.id;
+}
+
+// ===== Excel 내보내기 (SheetJS) =====
+function _xlsxDownload(rows, sheetName, fileName){
+  if(typeof XLSX==='undefined'){alert('엑셀 라이브러리(SheetJS)를 불러오지 못했습니다. 네트워크를 확인해주세요.');return;}
+  if(!rows||!rows.length){alert('내보낼 데이터가 없어요.');return;}
+  const ws=XLSX.utils.json_to_sheet(rows);
+  // 컬럼 너비 자동 조정 (한글 폭 고려)
+  const keys=Object.keys(rows[0]);
+  ws['!cols']=keys.map(k=>{
+    const maxLen=Math.max(k.length*2, ...rows.map(r=>String(r[k]??'').length*1.4));
+    return {wch:Math.min(Math.max(maxLen+2,8),40)};
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  XLSX.writeFile(wb,fileName);
+  toast(`${fileName} 다운로드 완료`);
+}
+
+function exportIngredientsXlsx(){
+  const rows=ingredients.map(g=>({
+    '대분류':g.category||'',
+    '재료명':g.name||'',
+    '업체':g.vendor||'',
+    '납품단위':g.uname||'',
+    '중량':g.weight??0,
+    '단위':g.wu||'',
+    '납품가(원)':g.price??0,
+    '단위원가(원/단위)':Number((g.perUnit||0).toFixed(2)),
+    '폐기율(%)':g.wasteRate||0
+  }));
+  _xlsxDownload(rows,'식재료','식재료_목록.xlsx');
+}
+
+function exportMenusXlsx(){
+  const chLabel={hall:'홀',delivery:'배달',both:'홀+배달'};
+  const sideC=getSide();
+  const rows=menus.map(m=>{
+    const fCost=(m.items||[]).reduce((s,r)=>s+(r.cost||0),0);
+    const total=fCost+sideC;
+    const rate=m.hallPrice?total/m.hallPrice*100:0;
+    const ok=rate&&rate<=m.target, warn=rate&&rate<=m.target*1.15;
+    const status=!rate?'—':ok?'목표달성':warn?'주의':'초과';
+    return {
+      '메뉴명':m.name||'',
+      '채널':chLabel[m.ch]||m.ch||'',
+      '판매가(원)':m.hallPrice||0,
+      '재료원가(원)':Math.round(total),
+      '원가율(%)':rate?Number(rate.toFixed(1)):0,
+      '목표원가율(%)':m.target||0,
+      '상태':status
+    };
+  });
+  _xlsxDownload(rows,'메뉴원가','메뉴_원가.xlsx');
+}
+
+function exportSalesXlsx(){
+  const rows=salesHistory.map(s=>({
+    '연월':s.month||s.ym||'',
+    '홀매출(원)':s.card||0,
+    '배달매출(원)':s.totalDel||0,
+    '총매출(원)':s.total||0,
+    '식재료비(원)':s.food||0,
+    '원가율(%)':Number((s.ratio||0).toFixed(1))
+  }));
+  _xlsxDownload(rows,'월매출','월매출_이력.xlsx');
 }
 
 // ── 초기화 ──
