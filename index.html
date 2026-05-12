@@ -355,6 +355,26 @@ tbody tr:hover td{background:var(--surface2)}
   <div class="page-title">발주 예측</div>
   <div class="page-desc">메뉴별 월 판매량과 납품 주기를 입력하면 다음 납품일까지 필요한 재료가 자동 계산됩니다</div>
   <div class="card">
+    <div class="card-title"><span class="card-dot"></span>💰 총매출 기반 자동 계산 <span style="font-weight:400;color:var(--text3);font-size:11px;margin-left:6px">(선택 — 매출 비중으로 월 판매량 역산)</span></div>
+    <div class="notice n-info">포스기 매출이나 추정 매출을 메뉴별 비중(%)으로 분배하면 월 판매량이 자동 계산됩니다. <b>반영</b> 버튼을 눌러야 아래 ① 표에 적용됩니다. 입력값은 브라우저에 자동 저장됩니다. <span style="color:var(--text3)">(향후 포스기/배달앱 연동 시 이 섹션만 교체)</span></div>
+    <div class="row">
+      <div class="fg" style="max-width:260px"><div class="fl">이번달 총매출 (원)</div><input id="rev-total" type="number" min="0" placeholder="예) 10000000" oninput="onRevenueTotalInput(this)"></div>
+    </div>
+    <div id="rev-warn" style="display:none;margin:8px 0;padding:8px 12px;background:var(--danger-l);color:var(--danger);border-radius:6px;font-size:12px;font-weight:600"></div>
+    <div class="tw" style="margin-top:8px"><table>
+      <thead><tr><th>메뉴명</th><th>판매가</th><th>매출 비중 (%)</th><th style="text-align:right">메뉴 매출</th><th style="text-align:right">월 판매량 (계산)</th></tr></thead>
+      <tbody id="rev-table"><tr class="empty"><td colspan="5">메뉴 레시피 탭에서 메뉴를 먼저 등록해주세요</td></tr></tbody>
+    </table></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:8px 12px;background:var(--surface2);border-radius:6px;font-size:12px">
+      <span style="color:var(--text2)">비중 합계</span>
+      <span id="rev-sum" style="font-family:'DM Mono',monospace;font-weight:700;font-size:14px">—</span>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn" onclick="resetRevenueInput()" title="총매출과 비중을 모두 초기화">↺ 초기화</button>
+      <button class="btn btn-p" onclick="applyRevenueToMenuSales()">📋 계산값을 ① 월 판매량에 반영 →</button>
+    </div>
+  </div>
+  <div class="card">
     <div class="card-title"><span class="card-dot"></span>① 메뉴별 월 판매량 / 납품 주기</div>
     <div class="notice n-info">월 판매량은 30일 기준입니다. 변경 시 자동 저장됩니다.</div>
     <div class="tw"><table>
@@ -899,7 +919,7 @@ function navigate(el){
   el.classList.add('on');
   const pg=el.dataset.page;
   document.getElementById('p-'+pg).classList.add('on');
-  if(pg==='order'){ renderOrderInput(); renderOrderSheet(); }
+  if(pg==='order'){ renderRevenueBased(); renderOrderInput(); renderOrderSheet(); }
 }
 
 // 이너 탭
@@ -2006,6 +2026,116 @@ function renderLqT(){
 }
 
 // ===== 발주 예측 =====
+// ===== 총매출 기반 역산 (UI 전용, localStorage 임시 저장) =====
+// 향후 포스기/배달앱 연동 시 이 블록만 교체. 산출된 monthlyQty는 기존 menuSales/menu_sales 테이블에 그대로 기록.
+const REV_INPUT_KEY = 'orderRevenueInputV1';
+let revenueInput = {totalRevenue: 0, ratios: {}}; // ratios: {menuName: percent}
+function _revMenuKey(m){ return m.name; }
+function loadRevenueInput(){
+  try{
+    const s = localStorage.getItem(REV_INPUT_KEY);
+    if(s){
+      const obj = JSON.parse(s);
+      revenueInput = {totalRevenue: Number(obj.totalRevenue)||0, ratios: obj.ratios||{}};
+    }
+  } catch(e){ revenueInput = {totalRevenue:0, ratios:{}}; }
+}
+function _saveRevenueInputLS(){
+  try{ localStorage.setItem(REV_INPUT_KEY, JSON.stringify(revenueInput)); } catch(e){}
+}
+function renderRevenueBased(){
+  const totalEl = document.getElementById('rev-total');
+  const tb = document.getElementById('rev-table');
+  const sumEl = document.getElementById('rev-sum');
+  const warnEl = document.getElementById('rev-warn');
+  if(!tb || !totalEl || !sumEl || !warnEl) return;
+  totalEl.value = revenueInput.totalRevenue || '';
+  if(!menus.length){
+    tb.innerHTML = '<tr class="empty"><td colspan="5">메뉴 레시피 탭에서 메뉴를 먼저 등록해주세요</td></tr>';
+    sumEl.textContent = '—'; sumEl.style.color = 'var(--text2)';
+    warnEl.style.display = 'none';
+    return;
+  }
+  const total = Number(revenueInput.totalRevenue)||0;
+  let ratioSum = 0;
+  tb.innerHTML = menus.map(m=>{
+    const key = _revMenuKey(m);
+    const ratio = Number(revenueInput.ratios[key])||0;
+    ratioSum += ratio;
+    const menuRev = total * ratio / 100;
+    const price = m.hallPrice||0;
+    const qty = (price>0 && menuRev>0) ? Math.round(menuRev/price) : 0;
+    const noPrice = !price;
+    return `<tr>
+      <td style="font-weight:600">${m.name}</td>
+      <td style="font-family:'DM Mono',monospace;color:${noPrice?'var(--danger)':'var(--text2)'}">${noPrice?'판매가 없음':fmt(price)+'원'}</td>
+      <td><input type="number" min="0" step="0.1" value="${ratio||''}" placeholder="0" style="width:90px;height:30px;font-size:12px;text-align:right" data-rev-key="${key.replace(/"/g,'&quot;')}" oninput="onRevenueRatioInput(this)"> %</td>
+      <td style="font-family:'DM Mono',monospace;text-align:right">${menuRev>0?fmt(Math.round(menuRev))+'원':'—'}</td>
+      <td style="font-family:'DM Mono',monospace;text-align:right;font-weight:700;color:${qty>0?'var(--accent)':'var(--text3)'}">${qty>0?fmt(qty)+'개':noPrice&&ratio>0?'⚠ 판매가 필요':'—'}</td>
+    </tr>`;
+  }).join('');
+  sumEl.textContent = fd(ratioSum,1)+'%';
+  if(ratioSum > 100.01){
+    warnEl.style.display = 'block';
+    warnEl.textContent = `⚠️ 비중 합계가 ${fd(ratioSum,1)}% 입니다 — 100% 이하로 조정해주세요`;
+    sumEl.style.color = 'var(--danger)';
+  } else {
+    warnEl.style.display = 'none';
+    sumEl.style.color = (ratioSum>=99.99 && ratioSum<=100.01) ? 'var(--accent)' : 'var(--text2)';
+  }
+}
+function onRevenueTotalInput(el){
+  revenueInput.totalRevenue = parseFloat(el.value)||0;
+  _saveRevenueInputLS();
+  renderRevenueBased();
+}
+function onRevenueRatioInput(el){
+  const key = el.dataset.revKey || '';
+  const v = parseFloat(el.value)||0;
+  if(v>0) revenueInput.ratios[key] = v;
+  else delete revenueInput.ratios[key];
+  _saveRevenueInputLS();
+  renderRevenueBased();
+}
+function resetRevenueInput(){
+  if(!confirm('총매출과 모든 비중 입력을 초기화할까요? (아래 ① 표는 영향 없음)')) return;
+  revenueInput = {totalRevenue:0, ratios:{}};
+  _saveRevenueInputLS();
+  renderRevenueBased();
+  toast('총매출 입력이 초기화되었습니다');
+}
+async function applyRevenueToMenuSales(){
+  const total = Number(revenueInput.totalRevenue)||0;
+  if(!total) return alert('이번달 총매출을 먼저 입력해주세요');
+  const activeRatios = menus.map(m=>Number(revenueInput.ratios[_revMenuKey(m)])||0);
+  const ratioSum = activeRatios.reduce((s,v)=>s+v,0);
+  if(ratioSum<=0) return alert('비중을 1개 이상 입력해주세요');
+  if(ratioSum > 100.01){
+    if(!confirm(`비중 합계가 ${fd(ratioSum,1)}% 입니다. 그래도 반영할까요?`)) return;
+  }
+  let applied=0, skipped=0;
+  for(const m of menus){
+    const ratio = Number(revenueInput.ratios[_revMenuKey(m)])||0;
+    if(ratio<=0) continue;
+    if(!m.hallPrice){ skipped++; continue; }
+    const menuRev = total * ratio / 100;
+    const qty = Math.round(menuRev / m.hallPrice);
+    let entry = menuSales.find(s => (s.menuId && (s.menuId===m.id||s.menuId===m._id)) || s.menuName===m.name);
+    if(!entry){
+      entry = {menuId: m.id||m._id||null, menuName: m.name, monthlyQty:0, orderCycle:'weekly'};
+      menuSales.push(entry);
+    }
+    entry.monthlyQty = qty;
+    applied++;
+    if(currentUser){ try { await saveMenuSaleToDB(entry); } catch(e){ console.error('saveMenuSaleToDB', e); } }
+  }
+  renderOrderInput();
+  renderOrderSheet();
+  let msg = `${applied}개 메뉴의 월 판매량이 반영되었습니다`;
+  if(skipped) msg += ` (판매가 없는 ${skipped}개는 건너뜀)`;
+  toast(msg);
+}
+
 const ORDER_CYCLES = {
   weekly: {label:'주1회', days:7},
   semiweekly: {label:'주2회', days:3.5},
@@ -2743,7 +2873,7 @@ function delMenu(i){
   const stale = menuSales.filter(s => (m.id && s.menuId===m.id) || (m._id && s.menuId===m._id) || s.menuName===m.name);
   stale.forEach(s => { if(s._id) delMenuSaleDB(s._id).catch(()=>{}); });
   menuSales = menuSales.filter(s => !stale.includes(s));
-  renderDash();renderMenuList&&renderMenuList();renderOrderInput();renderOrderSheet();updateBadges();
+  renderDash();renderMenuList&&renderMenuList();renderOrderInput();renderOrderSheet();renderRevenueBased();updateBadges();
 }
 // 자체제조 수정
 let editCpItems=[];
@@ -3277,7 +3407,7 @@ async function loadAllData() {
     renderMonthlyAvg(); renderMonthlyRates();
     renderSalesHist();renderSalesChart();
     renderMenuList();
-    renderOrderInput(); renderOrderSheet();
+    renderOrderInput(); renderOrderSheet(); renderRevenueBased();
     updateBadges();
     setSyncStatus('');
     toast('✅ 데이터 로드 완료');
@@ -3645,7 +3775,9 @@ toggleCh();
 document.getElementById('p-sa').classList.add('on');
 if(document.getElementById('menu-form-area'))document.getElementById('menu-form-area').style.display='none';
 document.getElementById('pp-today').classList.add('on');
+loadRevenueInput();
 renderDash();
+renderRevenueBased();
 updateBadges();
 
 // 로그인 상태 확인 - fetch로 직접 테스트
