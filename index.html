@@ -2049,31 +2049,57 @@ function renderRevenueBased(){
   const sumEl = document.getElementById('rev-sum');
   const warnEl = document.getElementById('rev-warn');
   if(!tb || !totalEl || !sumEl || !warnEl) return;
-  totalEl.value = revenueInput.totalRevenue || '';
+  // 입력 중일 때 외부 트리거로 값 덮어쓰지 않도록 가드 (포커스/커서 위치 보존)
+  if(document.activeElement !== totalEl) totalEl.value = revenueInput.totalRevenue || '';
   if(!menus.length){
     tb.innerHTML = '<tr class="empty"><td colspan="5">메뉴 레시피 탭에서 메뉴를 먼저 등록해주세요</td></tr>';
     sumEl.textContent = '—'; sumEl.style.color = 'var(--text2)';
     warnEl.style.display = 'none';
     return;
   }
-  const total = Number(revenueInput.totalRevenue)||0;
-  let ratioSum = 0;
   tb.innerHTML = menus.map(m=>{
     const key = _revMenuKey(m);
     const ratio = Number(revenueInput.ratios[key])||0;
-    ratioSum += ratio;
-    const menuRev = total * ratio / 100;
     const price = m.hallPrice||0;
-    const qty = (price>0 && menuRev>0) ? Math.round(menuRev/price) : 0;
     const noPrice = !price;
-    return `<tr>
+    const keyAttr = key.replace(/"/g,'&quot;');
+    return `<tr data-rev-menu="${keyAttr}">
       <td style="font-weight:600">${m.name}</td>
       <td style="font-family:'DM Mono',monospace;color:${noPrice?'var(--danger)':'var(--text2)'}">${noPrice?'판매가 없음':fmt(price)+'원'}</td>
-      <td><input type="number" min="0" step="0.1" value="${ratio||''}" placeholder="0" style="width:90px;height:30px;font-size:12px;text-align:right" data-rev-key="${key.replace(/"/g,'&quot;')}" oninput="onRevenueRatioInput(this)"> %</td>
-      <td style="font-family:'DM Mono',monospace;text-align:right">${menuRev>0?fmt(Math.round(menuRev))+'원':'—'}</td>
-      <td style="font-family:'DM Mono',monospace;text-align:right;font-weight:700;color:${qty>0?'var(--accent)':'var(--text3)'}">${qty>0?fmt(qty)+'개':noPrice&&ratio>0?'⚠ 판매가 필요':'—'}</td>
+      <td><input type="number" min="0" step="0.1" value="${ratio||''}" placeholder="0" style="width:90px;height:30px;font-size:12px;text-align:right" data-rev-key="${keyAttr}" oninput="onRevenueRatioInput(this)"> %</td>
+      <td class="rev-menu-rev" style="font-family:'DM Mono',monospace;text-align:right">—</td>
+      <td class="rev-menu-qty" style="font-family:'DM Mono',monospace;text-align:right;font-weight:700">—</td>
     </tr>`;
   }).join('');
+  // 모든 행 + 합계 부분 갱신
+  tb.querySelectorAll('tr[data-rev-menu]').forEach(tr=>{
+    const key = tr.dataset.revMenu;
+    _revRecalcRow(tr, Number(revenueInput.ratios[key])||0);
+  });
+  _revUpdateSummary();
+}
+function _revRecalcRow(tr, ratio){
+  const menuName = tr.dataset.revMenu;
+  const m = menus.find(x => _revMenuKey(x) === menuName);
+  const price = m ? (m.hallPrice||0) : 0;
+  const total = Number(revenueInput.totalRevenue)||0;
+  const menuRev = total * (Number(ratio)||0) / 100;
+  const qty = (price>0 && menuRev>0) ? Math.round(menuRev/price) : 0;
+  const noPrice = !price;
+  const revCell = tr.querySelector('.rev-menu-rev');
+  const qtyCell = tr.querySelector('.rev-menu-qty');
+  if(revCell) revCell.textContent = menuRev>0 ? fmt(Math.round(menuRev))+'원' : '—';
+  if(qtyCell){
+    qtyCell.style.color = qty>0 ? 'var(--accent)' : 'var(--text3)';
+    qtyCell.textContent = qty>0 ? fmt(qty)+'개' : (noPrice && (Number(ratio)||0)>0 ? '⚠ 판매가 필요' : '—');
+  }
+}
+function _revUpdateSummary(){
+  const sumEl = document.getElementById('rev-sum');
+  const warnEl = document.getElementById('rev-warn');
+  if(!sumEl || !warnEl) return;
+  let ratioSum = 0;
+  menus.forEach(m => { ratioSum += Number(revenueInput.ratios[_revMenuKey(m)])||0; });
   sumEl.textContent = fd(ratioSum,1)+'%';
   if(ratioSum > 100.01){
     warnEl.style.display = 'block';
@@ -2087,7 +2113,15 @@ function renderRevenueBased(){
 function onRevenueTotalInput(el){
   revenueInput.totalRevenue = parseFloat(el.value)||0;
   _saveRevenueInputLS();
-  renderRevenueBased();
+  // 전체 재렌더 대신 각 행 + 합계만 부분 갱신 (input 포커스/커서 보존)
+  const tb = document.getElementById('rev-table');
+  if(tb){
+    tb.querySelectorAll('tr[data-rev-menu]').forEach(tr=>{
+      const key = tr.dataset.revMenu;
+      _revRecalcRow(tr, Number(revenueInput.ratios[key])||0);
+    });
+  }
+  _revUpdateSummary();
 }
 function onRevenueRatioInput(el){
   const key = el.dataset.revKey || '';
@@ -2095,7 +2129,11 @@ function onRevenueRatioInput(el){
   if(v>0) revenueInput.ratios[key] = v;
   else delete revenueInput.ratios[key];
   _saveRevenueInputLS();
-  renderRevenueBased();
+  // 전체 재렌더하면 input 요소가 새로 만들어져 포커스가 사라지고
+  // 다음 키 입력(예: '30'의 '0')이 손실됨. 해당 행과 합계만 부분 갱신.
+  const tr = el.closest('tr');
+  if(tr) _revRecalcRow(tr, v);
+  _revUpdateSummary();
 }
 function resetRevenueInput(){
   if(!confirm('총매출과 모든 비중 입력을 초기화할까요? (아래 ① 표는 영향 없음)')) return;
