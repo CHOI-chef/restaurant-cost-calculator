@@ -2248,47 +2248,61 @@ function _dedupedMenuSales(arr){
   }
   return Array.from(seen.values());
 }
-// 발주 수량 표시: g→kg, ml→L 자동 환산 (1000 이상)
+// 발주 수량 표시: g는 g, ml은 ml로 — 단위 변환 없음 (사용자가 raw 값으로 검증 가능)
+// 천 단위 콤마만 적용해 가독성 확보.
 function _fmtQty(qty, unit){
   if(qty == null || isNaN(qty)) return '—';
-  if(unit==='g'  && qty>=1000) return `${fd(qty/1000,2)} kg`;
-  if(unit==='ml' && qty>=1000) return `${fd(qty/1000,2)} L`;
-  return `${fd(qty,1)} ${unit||''}`;
+  return `${Number(qty).toLocaleString('ko-KR',{maximumFractionDigits:1})} ${unit||''}`;
 }
 
 // 메뉴 1번 분량을 재료 단위까지 펼쳐서 demand 맵에 누적
-function _expandRecipeItem(it, factor, demand){
+// ctx = {menu, depth, diag, chain} — 진단용 (선택). diag에 단계별 기여 push.
+function _expandRecipeItem(it, factor, demand, ctx){
+  ctx = ctx || {};
+  const log = (e) => { if(ctx.diag) ctx.diag.push({menu: ctx.menu||'(unknown)', depth: ctx.depth||0, chain: (ctx.chain||[]).join(' > ') || '(직접)', ...e}); };
   const t = it.type || it.rtype || '';
+  const recipeQty = Number(it.qty)||0;
   if(t==='식재료'){
     const g = ingredients.find(x=>x.name===it.name);
-    if(!g) return;
+    if(!g){ log({phase:'식재료-MISS', name:it.name, recipeQty, warn:'⚠️ 식재료 미등록'}); return; }
+    const qty = factor*recipeQty;
+    const amount = qty*(g.perUnit||0);
+    log({phase:'식재료', name:g.name, factor:Number(factor.toFixed(3)), recipeQty, qtyContribution:Number(qty.toFixed(2)), perUnit:g.perUnit||0, amountContribution:Math.round(amount)});
     const key=`식재료|${g.name}|${g.vendor||''}`;
     const ex=demand.get(key);
-    const qty = factor*(Number(it.qty)||0);
     if(ex){ ex.qty += qty; ex.amount = ex.qty * (g.perUnit||0); }
-    else demand.set(key, {kind:'식재료', name:g.name, vendor:g.vendor||'미지정', unit:g.wu||'g', qty, perUnit:g.perUnit||0, amount: qty*(g.perUnit||0)});
+    else demand.set(key, {kind:'식재료', name:g.name, vendor:g.vendor||'미지정', unit:g.wu||'g', qty, perUnit:g.perUnit||0, amount});
   } else if(t==='주류'){
     const g = liquors.find(x=>x.name===it.name);
-    if(!g) return;
-    const qty = factor*(Number(it.qty)||0); // qty는 ml
-    const key=`주류|${g.name}|${g.vendor||''}`;
+    if(!g){ log({phase:'주류-MISS', name:it.name, recipeQty, warn:'⚠️ 주류 미등록'}); return; }
+    const qty = factor*recipeQty; // qty는 ml
     const perMlEff = g.perMl||0; // 보증금 차감 perMl
+    const amount = qty*perMlEff;
+    log({phase:'주류', name:g.name, factor:Number(factor.toFixed(3)), recipeQtyMl:recipeQty, qtyContribution:Number(qty.toFixed(2)), perMl:perMlEff, amountContribution:Math.round(amount)});
+    const key=`주류|${g.name}|${g.vendor||''}`;
     const ex=demand.get(key);
     if(ex){ ex.qty += qty; ex.amount = ex.qty * perMlEff; }
-    else demand.set(key, {kind:'주류', name:g.name, vendor:g.vendor||'미지정', unit:'ml', qty, perUnit:perMlEff, amount: qty*perMlEff, bottleVol:g.volume||0, uname:g.uname||'1병'});
+    else demand.set(key, {kind:'주류', name:g.name, vendor:g.vendor||'미지정', unit:'ml', qty, perUnit:perMlEff, amount, bottleVol:g.volume||0, uname:g.uname||'1병'});
   } else {
     // 자체제조 / 프랩
     const c = compounds.find(x=>x.name===it.name);
-    if(!c) return;
-    const ratio = (c.yld>0) ? (Number(it.qty)||0) / c.yld : 0;
-    (c.items||[]).forEach(sub => _expandRecipeItem(sub, factor*ratio, demand));
+    if(!c){ log({phase:'자체제조-MISS', name:it.name, recipeQty, warn:'⚠️ 자체제조 미등록'}); return; }
+    const ratio = (c.yld>0) ? recipeQty / c.yld : 0;
+    const suspicious = c.yld<=1 && recipeQty>5;
+    log({phase:'자체제조-펼침', name:c.name, yld:c.yld, recipeQty, ratio:Number(ratio.toFixed(4)), warn: suspicious ? '⚠️ yld≤1 + qty>5 — 완성량 미설정 의심' : ''});
+    if(suspicious){
+      console.warn(`[발주 경고] 자체제조 "${c.name}"의 완성량(yld=${c.yld})이 비정상적으로 작습니다. 자체제조 탭에서 완성량을 확인해주세요. 현재 비율 ${ratio.toFixed(2)}배로 ${c.name}의 모든 재료가 부풀려집니다.`);
+    }
+    const childCtx = {menu: ctx.menu, depth:(ctx.depth||0)+1, diag: ctx.diag, chain: [...(ctx.chain||[]), c.name]};
+    (c.items||[]).forEach(sub => _expandRecipeItem(sub, factor*ratio, demand, childCtx));
   }
 }
 function calcOrderDemand(){
   // 방어적 dedupe — DB에 중복 행이 남아있어도 메모리 단위에서 차단
   const list = _dedupedMenuSales(menuSales);
   const demand = new Map();
-  const diag = [];
+  const menuDiag = [];
+  const expandDiag = [];
   list.forEach(s=>{
     const m = menus.find(x => (s.menuId && (x.id===s.menuId||x._id===s.menuId)) || x.name===s.menuName);
     if(!m || !s.monthlyQty) return;
@@ -2296,12 +2310,24 @@ function calcOrderDemand(){
     const daily = monthly/30;
     const cyc = cycleDays(s.orderCycle);
     const factor = daily * cyc; // (월판매량/30) × 발주주기일수 = 발주 1회분 메뉴 수
-    diag.push({menu:m.name, monthlyQty:monthly, daily:Number(daily.toFixed(2)), cycleDays:cyc, factor:Number(factor.toFixed(2))});
-    (m.items||[]).forEach(it => _expandRecipeItem(it, factor, demand));
+    menuDiag.push({menu:m.name, monthlyQty:monthly, daily:Number(daily.toFixed(2)), cycleDays:cyc, factor:Number(factor.toFixed(2)), recipeItemCount:(m.items||[]).length});
+    (m.items||[]).forEach(it => _expandRecipeItem(it, factor, demand, {menu:m.name, depth:0, diag:expandDiag, chain:[]}));
   });
-  if(diag.length){
-    // DevTools 콘솔에서 메뉴별 factor 확인 가능 — 계산이 이상하면 여기 값부터 점검
-    try { console.groupCollapsed('[발주 예측] 메뉴별 factor'); console.table(diag); console.groupEnd(); } catch(e){}
+  if(menuDiag.length){
+    // DevTools 콘솔에서 4단계 진단 정보 확인 가능
+    try {
+      console.groupCollapsed(`[발주 예측 진단] v3 — ${list.length}개 메뉴, ${demand.size}개 재료, dedupe 후 ${menuSales.length}→${list.length}`);
+      console.log('① 메뉴별 factor — factor = monthlyQty/30 × cycleDays');
+      console.table(menuDiag);
+      if(expandDiag.length){
+        console.log('② 레시피 펼침 단계별 기여 — chain은 자체제조 펼침 경로. warn 컬럼이 비어있지 않으면 그 행이 의심.');
+        console.table(expandDiag);
+      }
+      console.log('③ 최종 발주 demand (재료별 합산 결과)');
+      console.table([...demand.values()].map(r=>({재료:r.name, 종류:r.kind, vendor:r.vendor, qty:Number(r.qty.toFixed(2)), unit:r.unit, perUnit:r.perUnit, amount:Math.round(r.amount)})));
+      console.log('④ 원본 menuSales 배열 (dedupe 전):'); console.table(menuSales);
+      console.groupEnd();
+    } catch(e){ console.error('[발주 진단] 로그 출력 실패', e); }
   }
   return Array.from(demand.values());
 }
@@ -3471,15 +3497,25 @@ async function loadAllData() {
     // menu_sales 중복 행 자동 정리 — 발주 계산 시 중복 합산되어 금액이 N배 부풀려지는 문제 방지
     // (DB에 (user_id, menu_name) unique 제약이 없으므로 누적 가능)
     {
+      console.log(`[menuSales] DB 로드: ${menuSales.length}개 행`, menuSales.map(s=>({_id:s._id, name:s.menuName, qty:s.monthlyQty})));
       const keep = _dedupedMenuSales(menuSales);
       if(keep.length < menuSales.length){
         const keepIds = new Set(keep.map(s => s._id).filter(Boolean));
         const extras = menuSales.filter(s => s._id && !keepIds.has(s._id));
-        console.warn(`[menuSales] 중복 행 ${extras.length}개 발견 — DB에서 자동 정리 시작`,
+        console.warn(`[menuSales] 중복 ${extras.length}개 발견 — DB에서 자동 정리 시작`,
           extras.map(e=>({_id:e._id, name:e.menuName, qty:e.monthlyQty})));
-        for(const e of extras){ delMenuSaleDB(e._id).catch(err=>console.error('delMenuSaleDB', err)); }
+        // 병렬 DELETE 후 성공/실패 집계
+        Promise.all(extras.map(e => delMenuSaleDB(e._id).then(ok=>({_id:e._id, name:e.menuName, ok}))))
+          .then(results=>{
+            const failed = results.filter(r=>!r.ok);
+            const succ = results.length - failed.length;
+            console.log(`[menuSales] DB 정리 결과: 성공 ${succ}건, 실패 ${failed.length}건`, failed);
+            if(failed.length>0){
+              toast(`⚠️ 발주 중복 ${failed.length}건 DB 삭제 실패 — 콘솔 확인`);
+            }
+          });
         menuSales = keep;
-        toast(`발주 데이터 중복 ${extras.length}건 정리됨`);
+        toast(`발주 데이터 중복 ${extras.length}건 메모리 정리 완료`);
       }
     }
 
@@ -3721,11 +3757,22 @@ async function saveMenuSaleToDB(entry){
   finally { if(entry._saving === promise) entry._saving = null; }
 }
 async function delMenuSaleDB(id){
-  if(!currentUser || !id) return;
-  await fetch(`${SUPA_URL}/rest/v1/menu_sales?id=eq.${id}`, {
-    method:'DELETE',
-    headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${accessToken || SUPA_KEY}`}
-  });
+  if(!currentUser || !id) return false;
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/menu_sales?id=eq.${id}`, {
+      method:'DELETE',
+      headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${accessToken || SUPA_KEY}`}
+    });
+    if(!res.ok){
+      const text = await res.text();
+      console.error(`[delMenuSale] DELETE 실패 (status=${res.status}) id=${id}`, text);
+      return false;
+    }
+    return true;
+  } catch(e){
+    console.error('[delMenuSale] 네트워크 오류', e);
+    return false;
+  }
 }
 
 async function saveCompound(item) {
