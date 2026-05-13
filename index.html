@@ -3786,29 +3786,60 @@ async function saveIng(item) {
 
 async function saveCompoundToDB(item) {
   if (!currentUser) return;
+  const isUpdate = !!item._id;
   const row = {
     user_id: currentUser.id,
     name: item.name,
-    items: item.items,
-    cost_per_unit: item.perG,
+    items: Array.isArray(item.items) ? item.items : [],
+    cost_per_unit: Number(item.perG) || 0,
     unit: item.yu,
     unit_name: item.yu,
-    yield_amount: item.yld || 1,
+    yield_amount: Number(item.yld) || 1,
     cp_type: item.cpType || '일반 자체제조'
   };
-  if (item._id) row.id = item._id;
-  const res = await fetch(`${SUPA_URL}/rest/v1/compounds`, {
-    method: item._id ? 'PATCH' : 'POST',
-    headers: {
-      'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${accessToken || SUPA_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
-    },
-    body: JSON.stringify(row)
-  });
-  const data = await res.json();
-  if (Array.isArray(data) && data[0]) item._id = data[0].id;
+  // PATCH는 URL에 id 필터 필수 — 누락되면 PostgREST가 어떤 row도 갱신하지 않음(수정이 안 되는 핵심 원인).
+  // POST 시에는 body에 id 넣으면 안 됨(자동 생성 충돌). row.id는 의도적으로 안 넣고 URL만 사용.
+  const url = isUpdate
+    ? `${SUPA_URL}/rest/v1/compounds?id=eq.${encodeURIComponent(item._id)}`
+    : `${SUPA_URL}/rest/v1/compounds`;
+  try {
+    const res = await fetch(url, {
+      method: isUpdate ? 'PATCH' : 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(row)
+    });
+    const text = await res.text();
+    let data; try{data=text?JSON.parse(text):null;}catch(e){data=text;}
+    console.log(`[saveCompound] ${isUpdate?'PATCH':'POST'} ${url}`, {sent:row, status:res.status, response:data});
+    if(!res.ok){
+      console.error('[saveCompound] 저장 실패', res.status, data, '보낸 row:', row);
+      const blob = JSON.stringify(data||'');
+      if(/items|cost_per_unit|yield_amount|cp_type/i.test(blob) && /column|schema/i.test(blob)){
+        toast('⚠️ 자체제조 컬럼 누락 — DB 점검 모달 확인');
+        try{ checkSchemaHealth&&checkSchemaHealth(false); }catch(_){}
+      } else if(res.status===401||res.status===403){
+        toast('⚠️ 인증/권한 오류 — 다시 로그인 필요');
+      } else {
+        toast(`⚠️ 자체제조 저장 실패 (HTTP ${res.status})`);
+      }
+      return;
+    }
+    if(Array.isArray(data) && data[0]){
+      item._id = data[0].id;
+    } else if(isUpdate && (!data || (Array.isArray(data)&&data.length===0))){
+      // PATCH 응답이 비어 있으면 id 필터가 어떤 row와도 매칭 안 된 것 — _id는 있는데 DB에 그 row가 없음
+      console.warn('[saveCompound] PATCH 응답 비어 있음 — id 필터가 매칭 실패. _id:', item._id);
+      toast('⚠️ 수정 대상 row를 찾지 못함 (id 필터 미스)');
+    }
+  } catch(e){
+    console.error('[saveCompound] 네트워크/예외', e);
+    toast('⚠️ 자체제조 저장 중 네트워크 오류');
+  }
 }
 
 async function delIngDB(id) {
