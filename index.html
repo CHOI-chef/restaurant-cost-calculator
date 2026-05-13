@@ -2041,7 +2041,13 @@ function loadRevenueInput(){
   } catch(e){ revenueInput = {totalRevenue:0, ratios:{}}; }
 }
 function _saveRevenueInputLS(){
-  try{ localStorage.setItem(REV_INPUT_KEY, JSON.stringify(revenueInput)); } catch(e){}
+  try{
+    localStorage.setItem(REV_INPUT_KEY, JSON.stringify(revenueInput));
+  } catch(e){
+    // private 모드/quota 초과 등으로 저장 실패 시 사용자에게 알림 (조용히 묻으면 새로고침 후 비중 사라짐)
+    console.error('[비중 LS 저장 실패]', e);
+    try{ toast && toast('⚠️ 비중 입력 저장 실패 — 브라우저 저장공간을 확인하세요'); } catch(_){}
+  }
 }
 function renderRevenueBased(){
   const totalEl = document.getElementById('rev-total');
@@ -2049,6 +2055,11 @@ function renderRevenueBased(){
   const sumEl = document.getElementById('rev-sum');
   const warnEl = document.getElementById('rev-warn');
   if(!tb || !totalEl || !sumEl || !warnEl) return;
+  // 메모리 상태가 비어있으면 LS에서 재로드 시도 — 페이지 새로고침 직후 menus 비동기 로딩보다
+  // 먼저 onAuthStateChange가 다시 설정되는 등 race로 revenueInput이 초기 상태로 보이는 케이스 방어
+  if(!revenueInput.totalRevenue && Object.keys(revenueInput.ratios||{}).length===0){
+    loadRevenueInput();
+  }
   // 입력 중일 때 외부 트리거로 값 덮어쓰지 않도록 가드 (포커스/커서 위치 보존)
   if(document.activeElement !== totalEl) totalEl.value = revenueInput.totalRevenue || '';
   if(!menus.length){
@@ -2287,12 +2298,18 @@ function _expandRecipeItem(it, factor, demand, ctx){
     // 자체제조 / 프랩
     const c = compounds.find(x=>x.name===it.name);
     if(!c){ log({phase:'자체제조-MISS', name:it.name, recipeQty, warn:'⚠️ 자체제조 미등록'}); return; }
-    const ratio = (c.yld>0) ? recipeQty / c.yld : 0;
-    const suspicious = c.yld<=1 && recipeQty>5;
-    log({phase:'자체제조-펼침', name:c.name, yld:c.yld, recipeQty, ratio:Number(ratio.toFixed(4)), warn: suspicious ? '⚠️ yld≤1 + qty>5 — 완성량 미설정 의심' : ''});
-    if(suspicious){
-      console.warn(`[발주 경고] 자체제조 "${c.name}"의 완성량(yld=${c.yld})이 비정상적으로 작습니다. 자체제조 탭에서 완성량을 확인해주세요. 현재 비율 ${ratio.toFixed(2)}배로 ${c.name}의 모든 재료가 부풀려집니다.`);
+    let ratio = (c.yld>0) ? recipeQty / c.yld : 0;
+    // yld 미설정(default=1) + recipeQty>5 = 사용자가 yld를 설정하지 않은 것으로 간주.
+    // 이 경우 ratio = recipeQty/1 = recipeQty 가 되어 sub.qty가 N×N배로 폭증 (예: 차슈 750x 발주액).
+    // 안전장치: ratio를 1로 보정하여 sub.qty를 "메뉴 1개당 사용량"으로 읽음.
+    // 사용자가 자체제조 탭에서 완성량을 입력하면 정상 계산으로 자동 복귀.
+    let autoCapped = false;
+    if(c.yld<=1 && recipeQty>5){
+      console.warn(`[발주 보정] 자체제조 "${c.name}" 완성량(yld=${c.yld}) 미설정 의심 — ratio ${ratio.toFixed(2)} → 1.00 으로 자동 보정. 자체제조 탭에서 완성량을 입력하면 정확한 계산으로 복귀합니다.`);
+      ratio = 1;
+      autoCapped = true;
     }
+    log({phase:'자체제조-펼침', name:c.name, yld:c.yld, recipeQty, ratio:Number(ratio.toFixed(4)), warn: autoCapped ? '⚠️ yld≤1 + qty>5 — ratio 1로 보정' : ''});
     const childCtx = {menu: ctx.menu, depth:(ctx.depth||0)+1, diag: ctx.diag, chain: [...(ctx.chain||[]), c.name]};
     (c.items||[]).forEach(sub => _expandRecipeItem(sub, factor*ratio, demand, childCtx));
   }
@@ -2313,6 +2330,12 @@ function calcOrderDemand(){
     menuDiag.push({menu:m.name, monthlyQty:monthly, daily:Number(daily.toFixed(2)), cycleDays:cyc, factor:Number(factor.toFixed(2)), recipeItemCount:(m.items||[]).length});
     (m.items||[]).forEach(it => _expandRecipeItem(it, factor, demand, {menu:m.name, depth:0, diag:expandDiag, chain:[]}));
   });
+  // yld 미설정으로 자동 보정된 자체제조 목록 — UI 배너로 노출
+  const cappedNames = [...new Set(expandDiag.filter(e=>/ratio 1로 보정/.test(e.warn||'')).map(e=>{
+    // chain의 마지막 항목이 보정된 자체제조 이름
+    const parts = (e.chain||'').split(' > ');
+    return parts[parts.length-1] || '';
+  }).filter(Boolean))];
   if(menuDiag.length){
     // DevTools 콘솔에서 4단계 진단 정보 확인 가능
     try {
@@ -2329,7 +2352,10 @@ function calcOrderDemand(){
       console.groupEnd();
     } catch(e){ console.error('[발주 진단] 로그 출력 실패', e); }
   }
-  return Array.from(demand.values());
+  const rows = Array.from(demand.values());
+  // 호환성: 배열 그대로 반환하되 cappedNames를 부가 속성으로 첨부 (renderOrderSheet에서 읽음)
+  rows._cappedCompounds = cappedNames;
+  return rows;
 }
 function renderOrderSheet(){
   const body=document.getElementById('order-sheet-body');
@@ -2354,7 +2380,12 @@ function renderOrderSheet(){
   });
   let grandTotal=0, grandCount=0;
   const groupKeys=[...groups.keys()].sort();
-  body.innerHTML = groupKeys.map(vendor=>{
+  // 자체제조 yld 자동 보정 경고 배너
+  const capped = rows._cappedCompounds || [];
+  const warnHtml = capped.length
+    ? `<div style="margin-bottom:10px;padding:10px 14px;background:#fff4e0;border:1px solid #f0c060;border-radius:6px;font-size:12px;color:#7a4a00">⚠️ 자체제조 완성량(yld) 미설정으로 자동 보정된 항목: <b>${capped.join(', ')}</b><br><span style="color:#9a6a20">자체제조 탭에서 각 항목의 완성량을 정확히 입력하면 더 정밀한 발주량이 계산됩니다.</span></div>`
+    : '';
+  body.innerHTML = warnHtml + groupKeys.map(vendor=>{
     const items = groups.get(vendor).sort((a,b)=>b.amount-a.amount);
     const sub = items.reduce((s,x)=>s+x.amount,0);
     grandTotal += sub; grandCount += items.length;
