@@ -177,8 +177,9 @@ tbody tr:hover td{background:var(--surface2)}
 .order-group-sub{padding:8px 14px;background:#fafbfc;text-align:right;font-weight:700;font-size:13px}
 @media print{
   body * {visibility:hidden}
-  #order-print-zone, #order-print-zone * {visibility:visible}
-  #order-print-zone{position:absolute;left:0;top:0;width:100%;padding:14px}
+  /* 발주서 인쇄 모드 — body.printing-order 일 때만 order-print-zone 노출 */
+  body.printing-order #order-print-zone, body.printing-order #order-print-zone * {visibility:visible}
+  body.printing-order #order-print-zone{position:absolute;left:0;top:0;width:100%;padding:14px}
   .no-print, .no-print *{display:none !important}
 }
 </style>
@@ -871,6 +872,13 @@ tbody tr:hover td{background:var(--surface2)}
     <div class="card-title"><span class="card-dot"></span>소모품 선택</div>
     <div id="cs-check"><div style="color:var(--text3);font-size:13px">소모품 탭에서 먼저 등록하세요</div></div>
   </div>
+  <!-- 조리 단계 -->
+  <div class="card">
+    <div class="card-title" style="display:flex;align-items:center"><span class="card-dot" style="background:#f59e0b"></span>👨‍🍳 조리 단계 <span style="font-weight:400;color:var(--text3);font-size:11px;margin-left:8px">(선택 — 단계별 조리법·사진 등록 시 교육자료 PDF 출력 가능)</span>
+      <button class="btn btn-sm" onclick="addCookingStep()" style="margin-left:auto">+ 단계 추가</button>
+    </div>
+    <div id="cooking-steps-list"><div style="text-align:center;color:var(--text3);padding:14px;font-size:12px">단계가 없습니다 — 우측 상단 '+ 단계 추가' 버튼을 눌러주세요</div></div>
+  </div>
   <!-- 단가 기준 선택 -->
   <div class="card" id="price-mode-card" style="display:none">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -886,9 +894,10 @@ tbody tr:hover td{background:var(--surface2)}
   <div id="m-prev" style="display:none;margin-bottom:16px">
     <div class="ch-cards" id="m-rates"></div>
   </div>
-  <div style="display:flex;gap:10px;justify-content:flex-end">
+  <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
     <input type="hidden" id="m-edit-idx" value="">
     <button class="btn" onclick="clearMenu()">초기화</button>
+    <button class="btn" onclick="openRecipePrintPreview('form')" title="현재 폼의 내용으로 교육자료 미리보기">📚 교육자료 미리보기</button>
     <button class="btn btn-p" id="btn-save-menu" onclick="saveMenu()">메뉴 저장 →</button>
   </div>
   </div><!-- end menu-form-area -->
@@ -900,7 +909,7 @@ tbody tr:hover td{background:var(--surface2)}
 <div id="toast"></div>
 
 <script>
-let ingredients=[],compounds=[],cpItems=[],consumables=[],liquors=[],sideA=[],sideMethod='A',menus=[],rItems=[],selCsIds=[],priceHistory=[],salesHistory=[],menuSales=[];
+let ingredients=[],compounds=[],cpItems=[],consumables=[],liquors=[],sideA=[],sideMethod='A',menus=[],rItems=[],selCsIds=[],priceHistory=[],salesHistory=[],menuSales=[],cookingSteps=[];
 let dashFilter='all';
 
 const fmt=n=>Math.round(n).toLocaleString();
@@ -1442,6 +1451,13 @@ ALTER TABLE menu_sales ENABLE ROW LEVEL SECURITY;
 CREATE POLICY IF NOT EXISTS "user owns row" ON menu_sales
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);`,
     desc: '발주 예측 — 메뉴별 월 판매량/주기 저장 테이블'
+  },
+  {
+    id: 'menus_cooking_steps',
+    table: 'menus',
+    column: 'cooking_steps',
+    sql: "ALTER TABLE menus ADD COLUMN IF NOT EXISTS cooking_steps jsonb DEFAULT '[]'::jsonb;",
+    desc: '메뉴 조리 단계 (화력/시간/설명/포인트/사진URL) — 교육자료 출력 기반'
   }
 ];
 
@@ -2426,8 +2442,12 @@ function printOrderSheet(){
   const rows = calcOrderDemand();
   if(!rows.length){ alert('발주할 품목이 없습니다. 메뉴별 월 판매량을 먼저 입력해주세요.'); return; }
   document.getElementById('order-print-title').style.display='block';
+  document.body.classList.add('printing-order');
   window.print();
-  setTimeout(()=>{document.getElementById('order-print-title').style.display='none';},500);
+  setTimeout(()=>{
+    document.getElementById('order-print-title').style.display='none';
+    document.body.classList.remove('printing-order');
+  },500);
 }
 
 // 밑반찬
@@ -2739,7 +2759,85 @@ function updatePrev(){
   re.innerHTML=html+stepHtml;
 }
 
-function clearMenu(){rItems=[];selCsIds=[];['m-name','m-hp','m-dp'].forEach(id=>document.getElementById(id).value='');document.getElementById('m-target').value='30';document.getElementById('m-fee').value='0';document.getElementById('m-pkg').value='0';document.getElementById('m-ch').value='both';document.getElementById('m-plat').value='custom';document.querySelectorAll('#cs-check input').forEach(cb=>cb.checked=false);renderRT();document.getElementById('m-prev').style.display='none';toggleCh();}
+function clearMenu(){rItems=[];selCsIds=[];cookingSteps=[];['m-name','m-hp','m-dp'].forEach(id=>document.getElementById(id).value='');document.getElementById('m-target').value='30';document.getElementById('m-fee').value='0';document.getElementById('m-pkg').value='0';document.getElementById('m-ch').value='both';document.getElementById('m-plat').value='custom';document.querySelectorAll('#cs-check input').forEach(cb=>cb.checked=false);renderRT();renderCookingSteps();document.getElementById('m-prev').style.display='none';toggleCh();}
+
+// ===== 조리 단계 (cookingSteps) =====
+function addCookingStep(){
+  cookingSteps.push({heat:'중불', minutes:0, seconds:0, description:'', point:'', images:[]});
+  renderCookingSteps();
+}
+function delCookingStep(i){
+  if(!confirm(`단계 ${i+1}을(를) 삭제할까요?`)) return;
+  cookingSteps.splice(i,1);
+  renderCookingSteps();
+}
+function moveCookingStep(i, dir){
+  const j = i+dir;
+  if(j<0 || j>=cookingSteps.length) return;
+  [cookingSteps[i], cookingSteps[j]] = [cookingSteps[j], cookingSteps[i]];
+  renderCookingSteps();
+}
+function updateCookingStep(i, field, value){
+  if(!cookingSteps[i]) return;
+  if(field==='minutes'||field==='seconds') cookingSteps[i][field] = Math.max(0, parseInt(value)||0);
+  else cookingSteps[i][field] = value;
+}
+function delStepImage(stepIdx, imgIdx){
+  if(!cookingSteps[stepIdx]) return;
+  cookingSteps[stepIdx].images.splice(imgIdx, 1);
+  renderCookingSteps();
+}
+function _escAttr(s){ return String(s||'').replace(/"/g,'&quot;').replace(/&/g,'&amp;'); }
+function _escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderCookingSteps(){
+  const el = document.getElementById('cooking-steps-list');
+  if(!el) return;
+  if(!cookingSteps.length){
+    el.innerHTML = `<div style="text-align:center;color:var(--text3);padding:14px;font-size:12px">단계가 없습니다 — 우측 상단 '+ 단계 추가' 버튼을 눌러주세요</div>`;
+    return;
+  }
+  el.innerHTML = cookingSteps.map((s, i)=>{
+    const heatOpts = ['강불','중불','약불','없음'].map(h=>`<option value="${h}" ${s.heat===h?'selected':''}>${h==='없음'?'불 없음':h}</option>`).join('');
+    const imgs = (s.images||[]).map((url, j)=>`<div class="step-img-thumb"><img src="${_escAttr(url)}" alt="단계 ${i+1} 사진 ${j+1}"><button class="x" type="button" onclick="delStepImage(${i},${j})" title="사진 삭제">×</button></div>`).join('');
+    const fileDisabled = (s.images||[]).length>=2 ? 'disabled' : '';
+    const fileHint = (s.images||[]).length>=2 ? '<span style="font-size:11px;color:var(--text3);margin-left:6px">(최대 2장 도달)</span>' : '';
+    return `<div class="cooking-step-row">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span class="step-num">${i+1}</span>
+        <span style="font-weight:700;font-size:13px">단계 ${i+1}</span>
+        <button type="button" class="btn btn-sm" onclick="moveCookingStep(${i},-1)" style="margin-left:auto;padding:4px 8px" title="위로 이동" ${i===0?'disabled':''}>↑</button>
+        <button type="button" class="btn btn-sm" onclick="moveCookingStep(${i},1)" style="padding:4px 8px" title="아래로 이동" ${i===cookingSteps.length-1?'disabled':''}>↓</button>
+        <button type="button" class="del-btn" onclick="delCookingStep(${i})" title="단계 삭제">×</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <div class="fg" style="max-width:120px"><div class="fl">화력</div>
+          <select onchange="updateCookingStep(${i},'heat',this.value)">${heatOpts}</select>
+        </div>
+        <div class="fg" style="max-width:90px"><div class="fl">시간 (분)</div>
+          <input type="number" min="0" placeholder="0" value="${s.minutes||''}" oninput="updateCookingStep(${i},'minutes',this.value)">
+        </div>
+        <div class="fg" style="max-width:90px"><div class="fl">시간 (초)</div>
+          <input type="number" min="0" max="59" placeholder="0" value="${s.seconds||''}" oninput="updateCookingStep(${i},'seconds',this.value)">
+        </div>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <div class="fg" style="flex:2"><div class="fl">조리 방법</div>
+          <textarea rows="2" placeholder="예) 삼겹살을 0.5cm 두께로 썰어 강불에서 1분 30초 굽는다" oninput="updateCookingStep(${i},'description',this.value)">${_escHtml(s.description)}</textarea>
+        </div>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <div class="fg"><div class="fl">포인트 / 주의사항</div>
+          <textarea rows="2" placeholder="예) 기름이 튀지 않도록 키친타올로 물기 제거" oninput="updateCookingStep(${i},'point',this.value)">${_escHtml(s.point)}</textarea>
+        </div>
+      </div>
+      <div>
+        <div class="fl">사진 (최대 2장, JPG/PNG)${fileHint}</div>
+        <div class="step-images" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;margin-bottom:6px">${imgs||'<span style="font-size:11px;color:var(--text3)">아직 사진이 없습니다</span>'}</div>
+        <input type="file" accept="image/jpeg,image/png" style="font-size:12px" ${fileDisabled} onchange="uploadStepImage(${i},this)">
+      </div>
+    </div>`;
+  }).join('');
+}
 
 
 // ===== 메뉴 레시피 탭 - 저장된 메뉴 목록 =====
@@ -2779,6 +2877,7 @@ function renderMenuList(){
         <td style="padding:9px 12px;font-weight:700;color:${ok?'var(--accent)':warn?'var(--warn)':'var(--danger)'}">${rate?fd(rate,1)+'%':'—'}</td>
         <td style="padding:9px 12px"><span class="badge ${ok?'b-ok':warn?'b-warn':'b-danger'}">${ok?'목표달성':warn?'주의':'초과'}</span></td>
         <td style="padding:9px 8px;display:flex;gap:4px">
+          <button class="del-btn" style="background:#fff4e0;color:#7a4a00;font-size:12px" onclick="openRecipePrintPreview(${i})" title="교육자료 출력">📚</button>
           <button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="loadMenuForEdit(${i})">수정</button>
           <button class="del-btn" onclick="if(confirm('삭제?')){menus.splice(${i},1);renderMenuList();renderDash();updateBadges();}">×</button>
         </td>
@@ -2830,8 +2929,18 @@ function loadMenuForEdit(i){
     return {...it};
   })];
   selCsIds=[...(m.selCsIds||[])];
+  // 조리 단계 복원 (배열 깊은 복사 + images 배열도 복사)
+  cookingSteps = (m.cookingSteps||[]).map(s=>({
+    heat: s.heat||'중불',
+    minutes: Number(s.minutes)||0,
+    seconds: Number(s.seconds)||0,
+    description: s.description||'',
+    point: s.point||'',
+    images: Array.isArray(s.images) ? [...s.images] : []
+  }));
   toggleCh();
   renderRT();
+  renderCookingSteps();
   updatePrev();
   // 소모품 체크박스 복원
   setTimeout(()=>{
@@ -2853,7 +2962,7 @@ async function saveMenu(){
   if(!name||!hp)return alert('메뉴명과 홀 판매가를 입력해주세요');
   if(!rItems.length)return alert('재료를 최소 1개 추가해주세요');
   const dp=dpI||hp;
-  const obj={name,ch,hallPrice:hp,delPrice:dp,target,items:[...rItems],selCsIds:[...selCsIds],feeRate,pkgCost,cookTime:0};
+  const obj={name,ch,hallPrice:hp,delPrice:dp,target,items:[...rItems],selCsIds:[...selCsIds],feeRate,pkgCost,cookTime:0,cookingSteps:cookingSteps.map(s=>({...s, images:[...(s.images||[])]}))};
   // 수정 모드 확인
   const editIdxEl=document.getElementById('m-edit-idx');
   const editIdx=editIdxEl?editIdxEl.value:'';
@@ -3488,6 +3597,9 @@ async function loadAllData() {
       // recipe 필드 파싱 (문자열인 경우도 처리)
       let recipe = r.recipe || [];
       if(typeof recipe === 'string'){try{recipe=JSON.parse(recipe);}catch(e){recipe=[];}}
+      // cooking_steps 컬럼이 없는 환경에서도 안전 (undefined → [])
+      let steps = r.cooking_steps || [];
+      if(typeof steps === 'string'){try{steps=JSON.parse(steps);}catch(e){steps=[];}}
       return {
         _id: r.id, id: r.id,
         name: r.name || '', ch: r.channel || 'both',
@@ -3495,7 +3607,8 @@ async function loadAllData() {
         target: Number(r.target_rate) || 35,
         items: Array.isArray(recipe) ? recipe : [],
         selCsIds: [], feeRate: Number(r.fee_rate)||0, pkgCost: Number(r.pkg_cost)||0,
-        cookTime: Number(r.cook_time) || 0
+        cookTime: Number(r.cook_time) || 0,
+        cookingSteps: Array.isArray(steps) ? steps : []
       };
     });
 
@@ -3866,11 +3979,181 @@ async function saveMenuToDB(item) {
     fee_rate: item.feeRate || 0,
     pkg_cost: item.pkgCost || 0,
     recipe: item.items,
-    cook_time: item.cookTime || 0
+    cook_time: item.cookTime || 0,
+    cooking_steps: item.cookingSteps || []
   };
   if (item._id) row.id = item._id;
   const { data, error } = await sb.from('menus').upsert(row).select().single();
   if (!error && data) item._id = data.id;
+  if (error) {
+    // cooking_steps 컬럼이 없는 환경(마이그레이션 미실행) 대응 — 한번 더 시도
+    if(/cooking_steps|schema cache/i.test(error.message||'')){
+      console.warn('[saveMenuToDB] cooking_steps 컬럼 없음 — 마이그레이션(20260513_cooking_steps_and_storage.sql) 실행 필요. 임시로 cooking_steps 제외 저장.');
+      delete row.cooking_steps;
+      const { data:d2, error:e2 } = await sb.from('menus').upsert(row).select().single();
+      if(!e2 && d2) item._id = d2.id;
+      else if(e2) console.error('[saveMenuToDB] 재시도 실패', e2);
+    } else {
+      console.error('[saveMenuToDB] 저장 실패', error);
+    }
+  }
+}
+
+// ===== Supabase Storage: 조리 단계 사진 업로드 =====
+// 경로: {user_id}/{menu_name 안전화}/{stepNum}_{timestamp}_{filename}
+// - 같은 user/menu/step에 여러 사진을 업로드하면 timestamp로 충돌 방지
+// - public bucket이라 업로드 후 public URL을 그대로 image_url로 cookingSteps에 저장
+function _safeFileName(name){
+  return String(name||'photo')
+    .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ.\-]/g,'_')
+    .replace(/_+/g,'_')
+    .slice(-80);
+}
+function _safeMenuFolder(name){
+  const s = String(name||'untitled').replace(/[\\/?#%]/g,'_').replace(/\s+/g,'_').trim();
+  return s || 'untitled';
+}
+async function uploadStepImage(stepIdx, fileInput){
+  const file = fileInput.files && fileInput.files[0];
+  if(!file) return;
+  if(!currentUser){ alert('로그인 후 사진 업로드가 가능합니다'); fileInput.value=''; return; }
+  if(!/^image\/(jpeg|png)$/i.test(file.type)){ alert('JPG 또는 PNG 파일만 업로드할 수 있습니다'); fileInput.value=''; return; }
+  if(file.size > 5*1024*1024){
+    if(!confirm(`파일 크기가 ${(file.size/1024/1024).toFixed(1)}MB 입니다. 5MB 초과 시 업로드가 느릴 수 있어요. 계속할까요?`)){
+      fileInput.value=''; return;
+    }
+  }
+  const step = cookingSteps[stepIdx];
+  if(!step){ fileInput.value=''; return; }
+  if((step.images||[]).length >= 2){ alert('한 단계에 사진은 최대 2장까지 업로드할 수 있습니다'); fileInput.value=''; return; }
+  const menuName = (document.getElementById('m-name')||{}).value || 'untitled';
+  const folder = _safeMenuFolder(menuName);
+  const safeName = _safeFileName(file.name);
+  const path = `${currentUser.id}/${folder}/step${stepIdx+1}_${Date.now()}_${safeName}`;
+  setSyncStatus('사진 업로드 중...');
+  try {
+    const { error } = await sb.storage.from('recipe-images').upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type
+    });
+    if(error){
+      console.error('[uploadStepImage] 업로드 실패', error);
+      // bucket 없는 경우 안내
+      if(/bucket|not found|policy/i.test(error.message||'')){
+        alert('Storage 업로드 실패 — recipe-images 버킷이 없거나 권한이 없습니다.\nmigrations/20260513_cooking_steps_and_storage.sql 을 Supabase SQL Editor에서 실행해주세요.\n\n에러: ' + error.message);
+      } else {
+        alert('사진 업로드 실패: ' + (error.message||'알 수 없는 오류'));
+      }
+      return;
+    }
+    const { data: pub } = sb.storage.from('recipe-images').getPublicUrl(path);
+    if(pub && pub.publicUrl){
+      step.images = step.images || [];
+      step.images.push(pub.publicUrl);
+      renderCookingSteps();
+      toast(`사진 업로드 완료 (단계 ${stepIdx+1})`);
+    } else {
+      alert('업로드는 성공했으나 공개 URL을 가져오지 못했습니다');
+    }
+  } catch(e){
+    console.error('[uploadStepImage] 예외', e);
+    alert('사진 업로드 중 오류: ' + e.message);
+  } finally {
+    setSyncStatus('');
+    fileInput.value=''; // 같은 파일 재업로드 가능하게
+  }
+}
+
+// ===== 교육자료 미리보기 / 인쇄 =====
+// idx: 'form'이면 현재 폼 상태로, 숫자면 menus[idx]로
+function openRecipePrintPreview(idx){
+  let menu;
+  if(idx==='form'){
+    const name = (document.getElementById('m-name')||{}).value.trim();
+    if(!name && !rItems.length && !cookingSteps.length){
+      alert('미리보기할 내용이 없습니다 — 메뉴명/재료/조리단계를 먼저 입력해주세요');
+      return;
+    }
+    menu = {
+      name: name || '(메뉴명 미입력)',
+      hallPrice: parseFloat((document.getElementById('m-hp')||{}).value)||0,
+      items: rItems,
+      cookingSteps: cookingSteps
+    };
+  } else {
+    const m = menus[idx];
+    if(!m){ alert('메뉴를 찾을 수 없습니다'); return; }
+    menu = m;
+  }
+  const content = document.getElementById('recipe-print-content');
+  content.innerHTML = _buildRecipePrintHTML(menu);
+  const modal = document.getElementById('recipe-print-modal');
+  modal.style.display = 'flex';
+  modal.scrollTop = 0;
+}
+function closeRecipePrintPreview(){
+  document.getElementById('recipe-print-modal').style.display = 'none';
+  document.body.classList.remove('printing-recipe');
+}
+function printRecipeNow(){
+  document.body.classList.add('printing-recipe');
+  // 브라우저가 print 다이얼로그 닫은 후 클래스 제거 (afterprint 이벤트 활용)
+  const cleanup = () => {
+    document.body.classList.remove('printing-recipe');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+  // afterprint 미지원 브라우저 대비 fallback
+  setTimeout(cleanup, 1500);
+}
+function _heatBadge(h){
+  const map = {'강불':'🔥🔥🔥', '중불':'🔥🔥', '약불':'🔥', '없음':'❌'};
+  return `<span style="font-size:13px">${map[h]||map['중불']} ${h==='없음'?'불 없음':(h||'중불')}</span>`;
+}
+function _stepTimeText(s){
+  const m = Number(s.minutes)||0, sec = Number(s.seconds)||0;
+  if(!m && !sec) return '';
+  const parts = [];
+  if(m) parts.push(`${m}분`);
+  if(sec) parts.push(`${sec}초`);
+  return `<span style="font-size:13px;color:#444">⏱ ${parts.join(' ')}</span>`;
+}
+function _buildRecipePrintHTML(menu){
+  const today = new Date();
+  const ymd = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const items = (menu.items||[]).map(it=>{
+    const t = it.type||it.rtype||'';
+    return `<tr><td>${_escHtml(it.name)}</td><td style="text-align:center;width:80px">${_escHtml(t)}</td><td style="text-align:right;width:90px">${fd(Number(it.qty)||0,1)} ${_escHtml(it.unit||'')}</td></tr>`;
+  }).join('') || `<tr><td colspan="3" style="text-align:center;color:#999;padding:14px">재료 없음</td></tr>`;
+  const steps = (menu.cookingSteps||[]).map((s,i)=>{
+    const imgs = (s.images||[]).map(url=>`<img src="${_escAttr(url)}" alt="">`).join('');
+    return `<div class="rp-step">
+      <div class="rp-step-num">${i+1}</div>
+      <div class="rp-step-body">
+        <div class="rp-step-head">${_heatBadge(s.heat)} ${_stepTimeText(s)}</div>
+        <div class="rp-step-desc">${_escHtml(s.description)||'<span style="color:#aaa">조리 방법 미입력</span>'}</div>
+        ${s.point ? `<div class="rp-step-point"><b>📌 포인트:</b> ${_escHtml(s.point)}</div>` : ''}
+        ${imgs ? `<div class="rp-step-imgs">${imgs}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('') || `<div class="rp-empty">조리 단계가 등록되지 않았습니다</div>`;
+  return `
+    <div class="rp-title">${_escHtml(menu.name)}<span class="rp-meta">— 조리 교육자료 · 출력일 ${ymd}</span></div>
+    ${menu.hallPrice ? `<div style="font-size:12px;color:#555;margin-bottom:10px">판매가 ${fmt(menu.hallPrice)}원</div>` : ''}
+    <div class="rp-section">
+      <div class="rp-section-title">🥘 재료 목록</div>
+      <table>
+        <thead><tr><th>재료명</th><th style="width:80px;text-align:center">종류</th><th style="width:90px;text-align:right">사용량</th></tr></thead>
+        <tbody>${items}</tbody>
+      </table>
+    </div>
+    <div class="rp-section">
+      <div class="rp-section-title">👨‍🍳 조리 단계</div>
+      ${steps}
+    </div>
+  `;
 }
 
 // ===== Excel 내보내기 (SheetJS) =====
@@ -4084,5 +4367,54 @@ updateBadges();
     </div>
   </div>
 </div>
+
+<!-- 교육자료 미리보기 모달 (A4 인쇄 최적화) -->
+<div id="recipe-print-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0">
+  <div class="recipe-print-modal-box" style="background:#fff;border-radius:10px;width:870px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.25);margin:auto;overflow:hidden">
+    <div class="recipe-print-toolbar" style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--surface2);position:sticky;top:0;z-index:1">
+      <div style="font-size:15px;font-weight:700;color:var(--text)">📚 교육자료 미리보기</div>
+      <div style="font-size:11px;color:var(--text3);margin-left:6px">A4 한 장에 맞춰 출력됩니다</div>
+      <button class="btn btn-p" onclick="printRecipeNow()" style="margin-left:auto">🖨️ 인쇄 / PDF 저장</button>
+      <button class="btn" onclick="closeRecipePrintPreview()">닫기</button>
+    </div>
+    <div id="recipe-print-content" class="recipe-print-content" style="padding:24px 30px;background:#fff"></div>
+  </div>
+</div>
+<style>
+/* 교육자료 인쇄용 */
+.recipe-print-content{font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;color:#222;font-size:13px;line-height:1.55}
+.recipe-print-content .rp-title{font-size:22px;font-weight:800;border-bottom:3px solid #222;padding-bottom:8px;margin-bottom:14px;display:flex;align-items:baseline;gap:10px}
+.recipe-print-content .rp-meta{font-size:11px;color:#666;font-weight:500}
+.recipe-print-content .rp-section{margin:14px 0}
+.recipe-print-content .rp-section-title{font-size:14px;font-weight:700;background:#f4f4f0;padding:6px 10px;border-left:4px solid #f59e0b;margin-bottom:8px}
+.recipe-print-content table{width:100%;border-collapse:collapse;font-size:12px}
+.recipe-print-content table th, .recipe-print-content table td{border:1px solid #ccc;padding:5px 8px;text-align:left}
+.recipe-print-content table th{background:#f4f4f0;font-weight:700}
+.recipe-print-content .rp-step{display:flex;gap:14px;padding:10px 0;border-bottom:1px dashed #ccc;page-break-inside:avoid}
+.recipe-print-content .rp-step-num{flex:0 0 36px;height:36px;border-radius:50%;background:#f59e0b;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.recipe-print-content .rp-step-body{flex:1;min-width:0}
+.recipe-print-content .rp-step-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-weight:700}
+.recipe-print-content .rp-step-desc{margin:4px 0}
+.recipe-print-content .rp-step-point{margin-top:4px;padding:6px 8px;background:#fff8e1;border-left:3px solid #f59e0b;font-size:12px}
+.recipe-print-content .rp-step-imgs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.recipe-print-content .rp-step-imgs img{max-width:140px;max-height:110px;border:1px solid #ccc;border-radius:4px;object-fit:cover}
+.recipe-print-content .rp-empty{text-align:center;color:#999;padding:30px;font-size:13px}
+@media print{
+  /* body.printing-recipe 클래스가 있을 때만 recipe modal 노출 (Ctrl+P 사고 방지) */
+  body.printing-recipe #recipe-print-modal, body.printing-recipe #recipe-print-modal *{visibility:visible}
+  body.printing-recipe #recipe-print-modal{position:absolute !important;inset:0 !important;background:#fff !important;padding:0 !important;display:block !important}
+  body.printing-recipe .recipe-print-modal-box{box-shadow:none !important;border-radius:0 !important;width:100% !important;max-width:none !important}
+  body.printing-recipe .recipe-print-toolbar{display:none !important}
+  body.printing-recipe .recipe-print-content{padding:0 !important}
+  @page{size:A4;margin:14mm 12mm}
+}
+/* 조리 단계 입력 row */
+.cooking-step-row{border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px;background:var(--surface)}
+.cooking-step-row .step-num{background:#f59e0b;color:#fff;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+.cooking-step-row textarea{width:100%;min-height:42px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface)}
+.step-img-thumb{position:relative;display:inline-block}
+.step-img-thumb img{width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
+.step-img-thumb .x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--danger);color:#fff;border:none;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+</style>
 </body>
 </html>
