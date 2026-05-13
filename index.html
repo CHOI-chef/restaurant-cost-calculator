@@ -1128,22 +1128,30 @@ function findIngByNameOrAlias(query){
 }
 
 // ===== 3번: 레시피/자체제조 원가 자동 재계산 =====
+// 호출 시점: 식재료/자체제조/주류 변경, 데이터 로드 직후
+// 핵심: 자체제조 yld 또는 식재료 perUnit이 바뀌어도 메뉴의 stale r.cost를 fresh로 갱신.
+//       (이걸 안 하면 발주 예측은 fresh yld로 계산하고 메뉴 목록은 stale r.cost를 표시해
+//        두 값이 N배 차이가 나는 미스매치가 발생함 — 사용자가 발주액 폭증으로 체감)
 function recalcAllCosts(){
-  // 자체제조 원가 재계산
-  compounds.forEach(cp=>{
-    let total=0;
-    cp.items.forEach(it=>{
-      const ing=ingredients.find(g=>g.name===it.name);
-      const sub=compounds.find(c=>c.name===it.name);
-      if(ing){it.cost=ing.perUnit*it.qty;total+=it.cost;}
-      else if(sub){it.cost=sub.perG*it.qty;total+=it.cost;}
+  // 1단계: 자체제조 원가 재계산 (중첩 자체제조 대응 위해 2회 반복 — A→B→식재료 같은 1단계 중첩까지 안정화)
+  for(let pass=0; pass<2; pass++){
+    compounds.forEach(cp=>{
+      let total=0;
+      (cp.items||[]).forEach(it=>{
+        const ing=ingredients.find(g=>g.name===it.name);
+        const sub=compounds.find(c=>c.name===it.name && c!==cp);
+        const lq=liquors.find(g=>g.name===it.name);
+        if(ing){it.cost=ing.perUnit*it.qty;total+=it.cost;}
+        else if(sub){it.cost=sub.perG*it.qty;total+=it.cost;}
+        else if(lq){it.cost=(lq.perMl||0)*it.qty;total+=it.cost;}
+      });
+      cp.total=total;
+      cp.perG=cp.yld?total/cp.yld:0;
     });
-    cp.total=total;
-    cp.perG=cp.yld?total/cp.yld:0;
-  });
-  // 메뉴 레시피 원가 재계산
+  }
+  // 2단계: 메뉴 레시피 원가 재계산 (자체제조 perG가 fresh이므로 mat 정확)
   menus.forEach(m=>{
-    m.items.forEach(it=>{
+    (m.items||[]).forEach(it=>{
       const ing=ingredients.find(g=>g.name===it.name);
       const cp=compounds.find(c=>c.name===it.name);
       const lq=liquors.find(g=>g.name===it.name);
@@ -1152,7 +1160,10 @@ function recalcAllCosts(){
       else if(lq)it.cost=lq.perMl*it.qty;
     });
   });
-  renderCpList();renderDash();
+  // 화면 갱신 — DOM 요소 없을 때(DB 로드 직후 등)도 안전하도록 가드
+  try{ renderCpList&&renderCpList(); }catch(_){}
+  try{ renderDash&&renderDash(); }catch(_){}
+  try{ renderMenuList&&renderMenuList(); }catch(_){}
 }
 
 function renderIngT(){
@@ -1836,11 +1847,13 @@ async function saveCp(){
   const idx=compounds.findIndex(c=>c.name===name);
   const obj={name,yld,yu,cpType,total,perG:total/yld,items:[...cpItems]};
   if(idx>=0){obj._id=compounds[idx]._id;compounds[idx]=obj;}else compounds.push(obj);
+  // yld/items 변경이 메뉴 r.cost와 발주 예측에 영향 → 메뉴/대시보드 재계산 필수
+  recalcAllCosts();
   renderCpList();updateAllSel();clearCp();updateBadges();toast(`'${name}' 저장 완료`);
   if(currentUser){setSyncStatus('저장 중...');await saveCompoundToDB(obj);setSyncStatus('');}
 }
 function clearCp(){cpItems=[];document.getElementById('cp-name').value='';document.getElementById('cp-yield').value='';document.getElementById('cp-type').value='일반';renderCpT();renderCpPrev();}
-function delCp(i){if(!confirm(`'${compounds[i].name}' 삭제?`))return;compounds.splice(i,1);renderCpList();updateAllSel();updateBadges();}
+function delCp(i){if(!confirm(`'${compounds[i].name}' 삭제?`))return;compounds.splice(i,1);recalcAllCosts();renderCpList();updateAllSel();updateBadges();}
 function renderCpList(){
   const el=document.getElementById('cp-list');
   document.getElementById('cp-cnt').textContent=compounds.length?`— ${compounds.length}개`:'';
@@ -2325,7 +2338,8 @@ function _expandRecipeItem(it, factor, demand, ctx){
       ratio = 1;
       autoCapped = true;
     }
-    log({phase:'자체제조-펼침', name:c.name, yld:c.yld, recipeQty, ratio:Number(ratio.toFixed(4)), warn: autoCapped ? '⚠️ yld≤1 + qty>5 — ratio 1로 보정' : ''});
+    // 진단: ratio 계산식을 명시적으로 노출 — 250g/yld 1000g = 0.25 같은 검산이 한눈에 가능
+    log({phase:'자체제조-펼침', name:c.name, '레시피qty':recipeQty, 'yld':c.yld, ratio:Number(ratio.toFixed(4)), '계산식':`${recipeQty}/${c.yld}=${(c.yld>0?recipeQty/c.yld:0).toFixed(4)}`, 'sub재료수':((c.items||[]).length), warn: autoCapped ? '⚠️ yld≤1 + qty>5 — ratio 1로 보정' : ''});
     const childCtx = {menu: ctx.menu, depth:(ctx.depth||0)+1, diag: ctx.diag, chain: [...(ctx.chain||[]), c.name]};
     (c.items||[]).forEach(sub => _expandRecipeItem(sub, factor*ratio, demand, childCtx));
   }
@@ -2343,7 +2357,11 @@ function calcOrderDemand(){
     const daily = monthly/30;
     const cyc = cycleDays(s.orderCycle);
     const factor = daily * cyc; // (월판매량/30) × 발주주기일수 = 발주 1회분 메뉴 수
-    menuDiag.push({menu:m.name, monthlyQty:monthly, daily:Number(daily.toFixed(2)), cycleDays:cyc, factor:Number(factor.toFixed(2)), recipeItemCount:(m.items||[]).length});
+    // 진단용 — 메뉴 목록에 표시되는 stale r.cost 합계와 발주서가 산출하는 fresh per-dish cost가
+    // 일치하는지 확인. 두 값이 다르면 자체제조 yld 변경 후 recalcAllCosts 누락 의심.
+    const cachedPerDishCost = (m.items||[]).reduce((sum,r)=>sum+(Number(r.cost)||0),0);
+    const expectedWeekCost = Math.round(cachedPerDishCost*factor);
+    menuDiag.push({menu:m.name, monthlyQty:monthly, daily:Number(daily.toFixed(2)), cycleDays:cyc, factor:Number(factor.toFixed(2)), recipeItemCount:(m.items||[]).length, '메뉴목록기준 1개원가':Math.round(cachedPerDishCost), '메뉴목록기준 1회발주액':expectedWeekCost});
     (m.items||[]).forEach(it => _expandRecipeItem(it, factor, demand, {menu:m.name, depth:0, diag:expandDiag, chain:[]}));
   });
   // yld 미설정으로 자동 보정된 자체제조 목록 — UI 배너로 노출
@@ -3228,6 +3246,8 @@ async function saveCpEdit(){
   c.total=editCpItems.reduce((s,it)=>s+it.cost,0);
   c.perG=c.yld?c.total/c.yld:0;
   closeCpEdit();
+  // yld/items 변경 → 메뉴 r.cost와 발주 예측 동기화 (이걸 안 해서 발주액 11배 부풀려진 케이스 있음)
+  recalcAllCosts();
   renderCpList();updateAllSel();updateBadges();toast('자체제조 수정 완료');
   if(currentUser){setSyncStatus('저장 중...');await saveCompoundToDB(c);setSyncStatus('');}
 }
@@ -3662,6 +3682,11 @@ async function loadAllData() {
         toast(`발주 데이터 중복 ${extras.length}건 메모리 정리 완료`);
       }
     }
+
+    // DB 로드 직후 자체제조 perG / 메뉴 r.cost 재계산 — 마지막 저장 이후
+    // 식재료 시세나 자체제조 yld가 다른 기기/세션에서 변경됐을 수 있으므로 반드시 한 번 동기화.
+    // (이걸 안 하면 메뉴 목록이 stale r.cost를 표시하면서 발주 예측만 fresh 값을 써서 두 화면이 N배 차이남)
+    recalcAllCosts();
 
     renderIngT(); updateAllSel(); updateVendorLists();
     updateTdIngSel(); updateHistFilters();
