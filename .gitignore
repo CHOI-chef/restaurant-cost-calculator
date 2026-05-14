@@ -1,0 +1,17 @@
+# Claude Code 로컬 설정
+.claude/
+
+# 카톡 스크린샷 / 작업용 임시 이미지
+KakaoTalk_*.jpg
+KakaoTalk_*.png
+KakaoTalk_*.jpeg
+
+# 날짜 백업본 (메인 index.html은 영향 없음)
+원가계산기_*.html
+
+# OS / 에디터
+Thumbs.db
+.DS_Store
+*.swp
+.vscode/
+.idea/
