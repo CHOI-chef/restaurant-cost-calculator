@@ -1860,13 +1860,21 @@ function renderCpList(){
   if(!compounds.length){el.innerHTML='<div style="text-align:center;color:var(--text3);padding:28px;font-size:13px">아직 저장된 자체제조 재료가 없어요</div>';return;}
   el.innerHTML=compounds.map((c,i)=>{
     const isPrep = c.cpType==='프랩';
+    const stepCount = Array.isArray(c.cookingSteps) ? c.cookingSteps.length : 0;
+    const stepBadge = stepCount
+      ? `<span class="badge" style="margin-left:6px;background:#fef3c7;color:#92400e;font-size:11px">🍳 ${stepCount}단계</span>`
+      : `<span class="badge" style="margin-left:6px;background:#f3f4f6;color:#9ca3af;font-size:10px">🍳 미등록</span>`;
+    const cpIdSafe = String(c._id||c.id||'').replace(/'/g,"\\'");
     return `<div class="cp-item">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px;flex-wrap:wrap">
         <div>
           <span style="font-size:14px;font-weight:700">${c.name}</span>
           <span class="badge ${isPrep?'b-warn':'b-info'}" style="margin-left:8px">${c.cpType||'일반'}</span>
+          ${stepBadge}
         </div>
-        <div style="display:flex;gap:4px">
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="del-btn" style="background:#fef3c7;color:#92400e;font-size:12px" onclick="openCookingStepsModal('${cpIdSafe}','compound')" title="조리법 편집">🍳 조리법 편집</button>
+          <button class="del-btn" style="background:#e0f2fe;color:#075985;font-size:12px" onclick="openCookingPreview('${cpIdSafe}',null,null,'compound')" title="조리법 인쇄 미리보기 (A4 한 페이지)">📄 인쇄</button>
           <button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="openCpEdit(${i})">수정</button>
           <button class="del-btn" onclick="delCp(${i})">×</button>
         </div>
@@ -2899,8 +2907,8 @@ function renderMenuList(){
         <td style="padding:9px 12px"><span class="badge ${ok?'b-ok':warn?'b-warn':'b-danger'}">${ok?'목표달성':warn?'주의':'초과'}</span></td>
         <td style="padding:9px 8px;display:flex;gap:4px;flex-wrap:wrap">
           <button class="del-btn" style="background:#fff4e0;color:#7a4a00;font-size:12px" onclick="openRecipePrintPreview(${i})" title="교육자료 출력 (구버전)">📚</button>
-          <button class="del-btn" style="background:#fef3c7;color:#92400e;font-size:12px" onclick="openCookingStepsModal('${menuIdSafe}')" title="조리법 편집">🍳 조리법</button>
-          <button class="del-btn" style="background:#e0f2fe;color:#075985;font-size:12px" onclick="openCookingPreview('${menuIdSafe}')" title="조리법 인쇄 미리보기 (A4 한 페이지)">📄 미리보기</button>
+          <button class="del-btn" style="background:#fef3c7;color:#92400e;font-size:12px" onclick="openCookingStepsModal('${menuIdSafe}','menu')" title="조리법 편집">🍳 조리법</button>
+          <button class="del-btn" style="background:#e0f2fe;color:#075985;font-size:12px" onclick="openCookingPreview('${menuIdSafe}',null,null,'menu')" title="조리법 인쇄 미리보기 (A4 한 페이지)">📄 미리보기</button>
           <button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="loadMenuForEdit(${i})">수정</button>
           <button class="del-btn" onclick="if(confirm('삭제?')){menus.splice(${i},1);renderMenuList();renderDash();updateBadges();}">×</button>
         </td>
@@ -3567,6 +3575,9 @@ async function loadAllData() {
       // yld: yield_amount 컬럼 없으면 1로 기본값 (절대 0 안됨)
       const yld = Math.max(Number(r.yield_amount) || Number(r.yld) || 1, 0.001);
       const total = perG * yld;
+      // cooking_steps 컬럼 (4단계 — compounds.cooking_steps 마이그레이션 후) 안전 파싱
+      let cSteps = r.cooking_steps || [];
+      if(typeof cSteps === 'string'){try{cSteps=JSON.parse(cSteps);}catch(e){cSteps=[];}}
       return {
         _id: r.id, id: r.id,
         name: r.name || '',
@@ -3575,7 +3586,8 @@ async function loadAllData() {
         yld: yld, total: total,
         cpType: r.cp_type || r.cpType || '일반 자체제조',
         unit: r.unit || 'g', yu: r.unit || 'g',
-        uname: r.unit_name || '단위'
+        uname: r.unit_name || '단위',
+        cookingSteps: Array.isArray(cSteps) ? cSteps : []
       };
     });
 
@@ -4112,12 +4124,12 @@ async function compressImage(file){
   });
 }
 
-// (b) uploadCookingPhoto(file, menuId, stepIndex) — Storage 업로드
-// 경로: {menuId}/{stepIndex}_{Date.now()}.jpg
+// (b) uploadCookingPhoto(file, entityId, stepIndex, type) — Storage 업로드
+// 경로: {menu_|compound_}{entityId}/{stepIndex}_{Date.now()}.jpg
 // 성공 시 public URL 반환, 실패 시 alert + throw.
-async function uploadCookingPhoto(file, menuId, stepIndex){
+async function uploadCookingPhoto(file, entityId, stepIndex, type){
   if(!file) throw new Error('uploadCookingPhoto: file이 비어있습니다');
-  if(!menuId) throw new Error('uploadCookingPhoto: menuId가 필요합니다 (메뉴 저장 후 사진 업로드 가능)');
+  if(!entityId) throw new Error('uploadCookingPhoto: entityId가 필요합니다 (먼저 저장 후 사진 업로드 가능)');
   if(typeof stepIndex !== 'number' || stepIndex < 0) throw new Error('uploadCookingPhoto: stepIndex가 유효하지 않습니다');
   let blob;
   try {
@@ -4126,7 +4138,8 @@ async function uploadCookingPhoto(file, menuId, stepIndex){
     alert('사진 압축 실패: ' + e.message);
     throw e;
   }
-  const path = `${menuId}/${stepIndex}_${Date.now()}.jpg`;
+  const prefix = (type === 'compound') ? 'compound_' : 'menu_';
+  const path = `${prefix}${entityId}/${stepIndex}_${Date.now()}.jpg`;
   const { error } = await sb.storage.from('recipe-images').upload(path, blob, {
     contentType: 'image/jpeg',
     cacheControl: '3600',
@@ -4204,7 +4217,8 @@ function normalizeCookingSteps(steps){
 // [2단계] 조리법 편집 모달 — 편집 상태 + render + CRUD + DnD + save
 // ============================================================
 let currentEditingSteps = null;      // 작업용 복사본 (저장 전까지 menus[].cookingSteps 건드리지 않음)
-let currentEditingMenuId = null;     // 편집 중인 메뉴의 DB id
+let currentEditingMenuId = null;     // 편집 중인 엔티티의 DB id (menu 또는 compound)
+let currentEditingType = 'menu';     // 'menu' | 'compound' — 모달 열 때 set, 닫을 때 reset
 let _csInitialSnapshot = null;       // 더티 체크용 JSON 스냅샷
 let _csDragIndex = -1;               // 드래그 중인 source step 인덱스
 let _csUploadCounter = 0;            // file input id 충돌 방지용
@@ -4230,18 +4244,25 @@ function _fmtDurationDisplay(sec){
   return `${sec}초`;
 }
 
-// (a) openCookingStepsModal(menuId) — 모달 열기
-function openCookingStepsModal(menuId){
-  if(!menuId){
-    alert('이 메뉴는 아직 DB에 저장되지 않았습니다. 메뉴를 먼저 저장한 후 다시 시도해주세요.');
+// (a) openCookingStepsModal(id, type) — 모달 열기 (type: 'menu' | 'compound')
+function openCookingStepsModal(id, type){
+  type = (type === 'compound') ? 'compound' : 'menu';
+  if(!id){
+    alert(type==='compound'
+      ? '이 자체제조는 아직 DB에 저장되지 않았습니다. 먼저 저장한 후 다시 시도해주세요.'
+      : '이 메뉴는 아직 DB에 저장되지 않았습니다. 메뉴를 먼저 저장한 후 다시 시도해주세요.');
     return;
   }
-  const m = menus.find(x => x._id===menuId || x.id===menuId);
-  if(!m){ alert('메뉴를 찾을 수 없습니다.'); return; }
-  currentEditingMenuId = menuId;
-  currentEditingSteps = normalizeCookingSteps(m.cookingSteps || []);
+  const entity = (type==='compound')
+    ? compounds.find(x => x._id===id || x.id===id)
+    : menus.find(x => x._id===id || x.id===id);
+  if(!entity){ alert(`${type==='compound'?'자체제조':'메뉴'}를 찾을 수 없습니다.`); return; }
+  currentEditingMenuId = id;
+  currentEditingType = type;
+  currentEditingSteps = normalizeCookingSteps(entity.cookingSteps || []);
   _csInitialSnapshot = JSON.stringify(currentEditingSteps);
-  document.getElementById('cs-modal-menu-name').textContent = m.name || '(이름 없음)';
+  console.log('[조리법모달] 열기', { type, id, name: entity.name, stepCount: currentEditingSteps.length }); // [DEBUG-TEMP] 검증 후 제거
+  document.getElementById('cs-modal-menu-name').textContent = entity.name || '(이름 없음)';
   const modal = document.getElementById('cookingStepsModal');
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
@@ -4256,6 +4277,7 @@ function closeCookingStepsModal(){
   document.body.style.overflow = '';
   currentEditingSteps = null;
   currentEditingMenuId = null;
+  currentEditingType = 'menu';
   _csInitialSnapshot = null;
   _csDragIndex = -1;
 }
@@ -4264,8 +4286,10 @@ function closeCookingStepsModal(){
 // 미리보기 모달은 cookingStepsModal 위에 겹쳐 표시 (z-index가 더 높음)
 function openBigPreview(){
   if(!Array.isArray(currentEditingSteps)){ alert('편집 중인 단계가 없습니다.'); return; }
-  const m = menus.find(x => x._id===currentEditingMenuId || x.id===currentEditingMenuId);
-  openCookingPreview(null, currentEditingSteps, m ? m.name : '(이름 없음)');
+  const entity = (currentEditingType === 'compound')
+    ? compounds.find(x => x._id===currentEditingMenuId || x.id===currentEditingMenuId)
+    : menus.find(x => x._id===currentEditingMenuId || x.id===currentEditingMenuId);
+  openCookingPreview(null, currentEditingSteps, entity ? entity.name : '(이름 없음)', currentEditingType);
 }
 
 // (b) renderStepsEditor() — 좌측 패널 렌더
@@ -4479,7 +4503,7 @@ async function onPhotoSelect(stepIndex, slotIndex, fileInput){
     slotEl.outerHTML = `<div class="cs-photo-slot cs-photo-loading" data-cs-slot="${stepIndex}-${slotIndex}"><div class="cs-spinner"></div></div>`;
   }
   try {
-    const url = await uploadCookingPhoto(file, currentEditingMenuId, stepIndex);
+    const url = await uploadCookingPhoto(file, currentEditingMenuId, stepIndex, currentEditingType);
     if(!Array.isArray(step.photos)) step.photos = [];
     step.photos.push(url);
     renderStepsEditor();
@@ -4515,12 +4539,13 @@ async function removePhoto(stepIndex, slotIndex){
 async function saveCookingSteps(){
   const id = currentEditingMenuId;
   const type = currentEditingType || 'menu';
-  if(!id){ alert('현재 편집 중인 ID가 없습니다.'); return; }
+  console.log('[saveCookingSteps] 진입', { id, type, stepCount: (currentEditingSteps||[]).length }); // [DEBUG-TEMP] 검증 후 제거
+  if(!id){ alert('현재 편집 중인 ID가 없습니다.'); console.warn('[saveCookingSteps] id 없음 — 모달이 제대로 열리지 않은 상태'); return; }
   // 엔티티 lookup (type별)
   const entity = (type === 'compound')
     ? compounds.find(x => x._id===id || x.id===id)
     : menus.find(x => x._id===id || x.id===id);
-  if(!entity){ alert(`${type==='compound'?'자체제조':'메뉴'}를 찾을 수 없습니다.`); return; }
+  if(!entity){ alert(`${type==='compound'?'자체제조':'메뉴'}를 찾을 수 없습니다.`); console.warn('[saveCookingSteps] entity 못 찾음', { type, id }); return; }
   // 필수: description이 모든 단계에서 입력됐는지 가벼운 검증 (저장은 막지 않고 confirm)
   const missing = currentEditingSteps.filter(s => !(s.description||'').trim()).length;
   if(missing > 0 && !confirm(`설명이 비어있는 단계가 ${missing}개 있습니다. 그래도 저장할까요?`)) return;
@@ -4539,6 +4564,7 @@ async function saveCookingSteps(){
   try {
     const token = (await sb.auth.getSession()).data.session?.access_token || (typeof accessToken!=='undefined' ? accessToken : null) || SUPA_KEY;
     const url = `${SUPA_URL}/rest/v1/${tableName}?id=eq.${encodeURIComponent(id)}`;
+    console.log('[saveCookingSteps] PATCH 요청', { url, stepCount: toSave.length, hasToken: !!token && token !== SUPA_KEY }); // [DEBUG-TEMP] 검증 후 제거
     const res = await fetch(url, {
       method: 'PATCH',
       headers: {
@@ -4551,6 +4577,7 @@ async function saveCookingSteps(){
     });
     const text = await res.text();
     let data; try{ data = text ? JSON.parse(text) : null; } catch(e){ data = text; }
+    console.log('[saveCookingSteps] PATCH 응답', { status: res.status, ok: res.ok, dataLen: Array.isArray(data)?data.length:typeof data }); // [DEBUG-TEMP] 검증 후 제거
     if(!res.ok){
       console.error('[saveCookingSteps] HTTP', res.status, data);
       const blob = JSON.stringify(data||'');
