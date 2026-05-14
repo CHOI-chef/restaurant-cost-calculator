@@ -9,6 +9,11 @@ KakaoTalk_*.jpeg
 # 날짜 백업본 (메인 index.html은 영향 없음)
 원가계산기_*.html
 
+# Claude Code 인수인계 / 작업 로그 (로컬 보존, 추적 제외)
+CLAUDE*.md
+**/CLAUDE*.md
+docs/work-logs/CLAUDE*.md
+
 # OS / 에디터
 Thumbs.db
 .DS_Store
