@@ -518,6 +518,7 @@ tbody tr:hover td{background:var(--surface2)}
       <span id="ing-cnt" style="font-size:12px;color:var(--text3)"></span>
       <button class="btn btn-sm" onclick="checkSchemaHealth(false)" style="margin-left:auto;font-size:11px" title="DB에 필요한 컬럼이 있는지 점검합니다">🛠️ DB 점검</button>
     </div>
+    <div class="notice n-info" style="font-size:12px;margin-bottom:10px">💡 등록 가격은 부가세 포함 기준입니다. 과세 식재료는 단가의 약 <b>9.1%</b>(10/110)가 매입세액공제 대상 — 아래 "환급" 표시는 단위당 환산값입니다. <span style="color:var(--text3)">(원가·이익 계산에는 영향 없음, 참고용)</span></div>
     <div class="tw"><table><thead><tr><th>대분류</th><th>재료명</th><th>업체</th><th>납품단위</th><th>중량</th><th>납품가</th><th>단위원가</th><th>폐기율</th><th>부가세</th><th>비교</th><th></th></tr></thead>
     <tbody id="i-table"><tr class="empty"><td colspan="11">아직 등록된 식재료가 없어요</td></tr></tbody></table></div>
   </div>
@@ -1241,8 +1242,9 @@ function renderIngT(){
       const i=ingredients.indexOf(g);
       const ib=Math.abs(g.perUnit-(best[catLabel||g.name]||0))<0.001;
       const aliasChips=(g.aliases||[]).length?`<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${g.aliases.map(a=>`<span style="font-size:10px;background:var(--info-l);color:var(--info);padding:1px 6px;border-radius:8px;font-weight:500">${a}</span>`).join('')}</div>`:'';
+      const refundPerUnit=g.taxType==='taxable' ? (g.perUnit||0)*10/110 : 0;
       const taxBadge=g.taxType==='taxable'
-        ?`<span class="badge b-warn" style="font-size:10px">과세</span>`
+        ?`<span class="badge b-warn" style="font-size:10px">과세</span><div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.2">환급 ~${fd(refundPerUnit)}원/${g.wu}</div>`
         :`<span class="badge b-gray" style="font-size:10px">면세</span>`;
       html+=`<tr>
         <td>${catLabel?`<span style="font-size:11px;background:var(--accent-l);padding:2px 7px;border-radius:10px;color:var(--accent);font-weight:600">${catLabel}</span>`:'<span style="font-size:11px;color:var(--text3)">—</span>'}</td>
