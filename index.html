@@ -488,6 +488,15 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="i-waste" type="number" placeholder="0" min="0" max="99" value="0"></div>
       <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addIng()">+ 등록</button></div>
     </div>
+    <div class="row" style="margin-top:8px">
+      <div class="fg" style="flex:1">
+        <div class="fl">부가세 구분</div>
+        <div style="display:flex;gap:14px;align-items:center;height:34px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="i-tax" value="exempt" checked> 면세 <span style="color:var(--text3);font-size:11px">(1차 농수축산물)</span></label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="i-tax" value="taxable"> 과세 <span style="color:var(--text3);font-size:11px">(가공식품·공산품)</span></label>
+        </div>
+      </div>
+    </div>
     <div class="row">
       <div class="fg" style="flex:1"><div class="fl">별칭 <span style="color:var(--text3);font-size:11px">(쉼표로 구분 — OCR/검색에서 자동 매칭)</span></div><input id="i-aliases" placeholder="예) 참기름오뚜기, 오뚜기참기름, 참기름500"></div>
     </div>
@@ -509,8 +518,8 @@ tbody tr:hover td{background:var(--surface2)}
       <span id="ing-cnt" style="font-size:12px;color:var(--text3)"></span>
       <button class="btn btn-sm" onclick="checkSchemaHealth(false)" style="margin-left:auto;font-size:11px" title="DB에 필요한 컬럼이 있는지 점검합니다">🛠️ DB 점검</button>
     </div>
-    <div class="tw"><table><thead><tr><th>대분류</th><th>재료명</th><th>업체</th><th>납품단위</th><th>중량</th><th>납품가</th><th>단위원가</th><th>폐기율</th><th>비교</th><th></th></tr></thead>
-    <tbody id="i-table"><tr class="empty"><td colspan="10">아직 등록된 식재료가 없어요</td></tr></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>대분류</th><th>재료명</th><th>업체</th><th>납품단위</th><th>중량</th><th>납품가</th><th>단위원가</th><th>폐기율</th><th>부가세</th><th>비교</th><th></th></tr></thead>
+    <tbody id="i-table"><tr class="empty"><td colspan="11">아직 등록된 식재료가 없어요</td></tr></tbody></table></div>
   </div>
 </div>
 
@@ -617,8 +626,17 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="fg"><div class="fl">납품 가격</div><input id="edit-i-price" type="number" placeholder="원"></div>
       <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="edit-i-waste" type="number" placeholder="0" min="0" max="99"></div>
     </div>
-    <div class="row" style="margin-bottom:20px">
+    <div class="row" style="margin-bottom:12px">
       <div class="fg" style="flex:1"><div class="fl">별칭 <span style="color:var(--text3);font-size:11px">(쉼표로 구분 — OCR/검색에서 자동 매칭)</span></div><input id="edit-i-aliases" placeholder="예) 참기름오뚜기, 오뚜기참기름"></div>
+    </div>
+    <div class="row" style="margin-bottom:20px">
+      <div class="fg" style="flex:1">
+        <div class="fl">부가세 구분</div>
+        <div style="display:flex;gap:14px;align-items:center;height:34px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="edit-i-tax" value="exempt"> 면세 <span style="color:var(--text3);font-size:11px">(1차 농수축산물)</span></label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="edit-i-tax" value="taxable"> 과세 <span style="color:var(--text3);font-size:11px">(가공식품·공산품)</span></label>
+        </div>
+      </div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="closeIngEdit()">취소</button>
@@ -1030,11 +1048,13 @@ async function addIng(){
   if(!name||!weight||!price) return alert('재료명, 중량, 가격을 입력해주세요');
   const wasteRate=parseFloat(document.getElementById('i-waste').value)||0;
   const aliases=parseAliases(document.getElementById('i-aliases').value);
+  const taxType=(document.querySelector('input[name="i-tax"]:checked')||{}).value||'exempt';
   const effectiveWeight=weight*(1-wasteRate/100);
-  const item={name,category,vendor,uname,weight,wu,price,perUnit:effectiveWeight>0?price/effectiveWeight:price/weight,wasteRate,aliases};
+  const item={name,category,vendor,uname,weight,wu,price,perUnit:effectiveWeight>0?price/effectiveWeight:price/weight,wasteRate,aliases,taxType};
   ingredients.push(item);
   ['i-name','i-vendor','i-uname','i-weight','i-price','i-category','i-waste','i-aliases'].forEach(id=>document.getElementById(id).value='');document.getElementById('i-waste').value='0';
   document.getElementById('i-vsel').value='';document.getElementById('i-cat-sel').value='';
+  const taxRadioExempt=document.querySelector('input[name="i-tax"][value="exempt"]');if(taxRadioExempt)taxRadioExempt.checked=true;
   renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateHistFilters();updateBadges();recalcAllCosts();toast('식재료 등록 완료');
   if(currentUser){setSyncStatus('저장 중...');await saveIng(item);setSyncStatus('');}
 }
@@ -1063,6 +1083,9 @@ function openIngEdit(i){
   document.getElementById('edit-i-price').value=g.price||'';
   document.getElementById('edit-i-waste').value=g.wasteRate||0;
   document.getElementById('edit-i-aliases').value=(g.aliases||[]).join(', ');
+  const editTaxVal=g.taxType||'exempt';
+  const editTaxRadio=document.querySelector(`input[name="edit-i-tax"][value="${editTaxVal}"]`);
+  if(editTaxRadio)editTaxRadio.checked=true;
   document.getElementById('ing-edit-modal').style.display='flex';
 }
 function closeIngEdit(){document.getElementById('ing-edit-modal').style.display='none';}
@@ -1080,6 +1103,7 @@ async function saveIngEdit(){
   g.price=parseFloat(document.getElementById('edit-i-price').value);
   g.wasteRate=parseFloat(document.getElementById('edit-i-waste').value)||0;
   g.aliases=parseAliases(document.getElementById('edit-i-aliases').value);
+  g.taxType=(document.querySelector('input[name="edit-i-tax"]:checked')||{}).value||'exempt';
   const ew=g.weight*(1-g.wasteRate/100);
   g.perUnit=ew>0?g.price/ew:g.price/g.weight;
   closeIngEdit();
@@ -1206,10 +1230,10 @@ function renderIngT(){
     if(catLabel&&multi){
       const bestPU=Math.min(...items.map(g=>g.perUnit));
       html+=`<tr style="background:var(--accent-l)">
-        <td colspan="7" style="padding:6px 12px;font-size:12px;font-weight:700;color:var(--accent)">
+        <td colspan="8" style="padding:6px 12px;font-size:12px;font-weight:700;color:var(--accent)">
           📦 ${catLabel} <span style="font-weight:400;color:var(--text2);font-size:11px">${items.length}가지 등록 · 최저 ${fd(bestPU)}원/${items[0].wu}</span>
         </td>
-        <td colspan="2" style="background:var(--accent-l)"></td>
+        <td colspan="3" style="background:var(--accent-l)"></td>
       </tr>`;
     }
 
@@ -1217,6 +1241,9 @@ function renderIngT(){
       const i=ingredients.indexOf(g);
       const ib=Math.abs(g.perUnit-(best[catLabel||g.name]||0))<0.001;
       const aliasChips=(g.aliases||[]).length?`<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${g.aliases.map(a=>`<span style="font-size:10px;background:var(--info-l);color:var(--info);padding:1px 6px;border-radius:8px;font-weight:500">${a}</span>`).join('')}</div>`:'';
+      const taxBadge=g.taxType==='taxable'
+        ?`<span class="badge b-warn" style="font-size:10px">과세</span>`
+        :`<span class="badge b-gray" style="font-size:10px">면세</span>`;
       html+=`<tr>
         <td>${catLabel?`<span style="font-size:11px;background:var(--accent-l);padding:2px 7px;border-radius:10px;color:var(--accent);font-weight:600">${catLabel}</span>`:'<span style="font-size:11px;color:var(--text3)">—</span>'}</td>
         <td style="font-weight:600">${g.name}${aliasChips}</td>
@@ -1226,6 +1253,7 @@ function renderIngT(){
         <td>${fmt(g.price)}원</td>
         <td style="font-weight:600;font-family:'DM Mono',monospace">${fd(g.perUnit)}원/${g.wu}</td>
         <td>${g.wasteRate?`<span class="badge b-warn">${g.wasteRate}%</span>`:'<span style="color:var(--text3)">0%</span>'}</td>
+        <td>${taxBadge}</td>
         <td>${multi?`<span class="badge ${ib?'b-ok':'b-gray'}">${ib?'⭐최저가':'비교중'}</span>`:'—'}</td>
         <td style="display:flex;gap:4px">
           <button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="openIngEdit(${i})">수정</button>
@@ -3566,7 +3594,8 @@ async function loadAllData() {
       price: Number(r.price) || 0,
       perUnit: Number(r.per_unit) || 0,
       wasteRate: Number(r.waste_rate) || 0,
-      aliases: Array.isArray(r.aliases) ? r.aliases : (typeof r.aliases==='string' ? (()=>{try{return JSON.parse(r.aliases||'[]');}catch(e){return [];}})() : [])
+      aliases: Array.isArray(r.aliases) ? r.aliases : (typeof r.aliases==='string' ? (()=>{try{return JSON.parse(r.aliases||'[]');}catch(e){return [];}})() : []),
+      taxType: (r.tax_type==='taxable'||r.tax_type==='exempt') ? r.tax_type : 'exempt'
     }));
 
     compounds = (Array.isArray(comp) ? comp : []).map(r => {
@@ -3734,7 +3763,8 @@ async function saveIng(item) {
     weight: item.weight, price: item.price,
     per_unit: item.perUnit, waste_rate: item.wasteRate || 0,
     category: item.category || '',
-    aliases: Array.isArray(item.aliases) ? item.aliases : []
+    aliases: Array.isArray(item.aliases) ? item.aliases : [],
+    tax_type: (item.taxType==='taxable'||item.taxType==='exempt') ? item.taxType : 'exempt'
   };
   // PATCH 시 URL에 id 필터를 명시 (이게 누락되면 PostgREST가 어떤 row를 갱신할지 모호)
   const url = isUpdate
