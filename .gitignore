@@ -18,6 +18,9 @@ CLAUDE*.md
 **/CLAUDE*.md
 docs/work-logs/CLAUDE*.md
 
+# 예외: 프로젝트 루트의 CLAUDE.md (작업 지침)는 추적함
+!CLAUDE.md
+
 # OS / 에디터
 Thumbs.db
 .DS_Store
