@@ -21,6 +21,9 @@ docs/work-logs/CLAUDE*.md
 # 예외: 프로젝트 루트의 CLAUDE.md (작업 지침)는 추적함
 !CLAUDE.md
 
+# DB CSV 백업 (실 매장 데이터 — GitHub 공개 금지, 로컬 보존)
+백업파일/
+
 # OS / 에디터
 Thumbs.db
 .DS_Store
