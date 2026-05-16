@@ -275,6 +275,18 @@ tbody tr:hover td{background:var(--surface2)}
 <div class="page on" id="p-dash">
   <div class="page-title">대시보드</div>
   <div class="page-desc">전체 메뉴 원가율을 한눈에 확인하세요</div>
+  <div id="vat-mode-bar" style="display:flex;align-items:center;gap:14px;padding:10px 14px;margin-bottom:12px;background:var(--info-l);border:1px dashed var(--info);border-radius:var(--radius-sm);font-size:13px;flex-wrap:wrap">
+    <span style="font-weight:600;color:var(--info)">💰 원가 기준</span>
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="radio" name="vat-mode" value="include" onchange="setVatMode('include')"> 부가세 포함
+      <span style="color:var(--text3);font-size:11px">(납품가 그대로)</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="radio" name="vat-mode" value="exclude" onchange="setVatMode('exclude')"> 부가세 제외
+      <span style="color:var(--text3);font-size:11px">(과세 식재료의 환급분 차감)</span>
+    </label>
+    <span style="margin-left:auto;font-size:11px;color:var(--text3)">설정은 자동 저장됩니다</span>
+  </div>
   <div class="metrics" id="d-metrics"></div>
   <div class="card">
     <div class="itb">
@@ -1166,7 +1178,7 @@ function recalcAllCosts(){
         const ing=ingredients.find(g=>g.name===it.name);
         const sub=compounds.find(c=>c.name===it.name && c!==cp);
         const lq=liquors.find(g=>g.name===it.name);
-        if(ing){it.cost=ing.perUnit*it.qty;total+=it.cost;}
+        if(ing){it.cost=getEffectiveUnitCost(ing)*it.qty;total+=it.cost;}
         else if(sub){it.cost=sub.perG*it.qty;total+=it.cost;}
         else if(lq){it.cost=(lq.perMl||0)*it.qty;total+=it.cost;}
       });
@@ -1180,7 +1192,7 @@ function recalcAllCosts(){
       const ing=ingredients.find(g=>g.name===it.name);
       const cp=compounds.find(c=>c.name===it.name);
       const lq=liquors.find(g=>g.name===it.name);
-      if(ing)it.cost=ing.perUnit*it.qty;
+      if(ing)it.cost=getEffectiveUnitCost(ing)*it.qty;
       else if(cp)it.cost=cp.perG*it.qty;
       else if(lq)it.cost=lq.perMl*it.qty;
     });
@@ -1598,7 +1610,7 @@ function calcMenuCostOverride(menu,getPU){
     const itemType=item.type||item.rtype||'';
     if(itemType==='식재료'){
       const pu=getPU(item.name);
-      const basePU=ingredients.find(g=>g.name===item.name)?.perUnit||0;
+      const basePU=getEffectiveUnitCost(ingredients.find(g=>g.name===item.name));
       cost+=(pu!==null?pu:basePU)*item.qty;
     } else if(itemType==='자체제조'||itemType==='일반'||itemType==='프랩'){
       const cp=compounds.find(c=>c.name===item.name);
@@ -1608,7 +1620,7 @@ function calcMenuCostOverride(menu,getPU){
           const ciType=ci.type||ci.rtype||'';
           if(ciType==='식재료'||!ciType){
             const pu=getPU(ci.name);
-            const basePU=ingredients.find(g=>g.name===ci.name)?.perUnit||0;
+            const basePU=getEffectiveUnitCost(ingredients.find(g=>g.name===ci.name));
             cc+=(pu!==null?pu:basePU)*ci.qty;
           } else {
             cc+=ci.cost||0;
@@ -2344,12 +2356,13 @@ function _expandRecipeItem(it, factor, demand, ctx){
     const g = ingredients.find(x=>x.name===it.name);
     if(!g){ log({phase:'식재료-MISS', name:it.name, recipeQty, warn:'⚠️ 식재료 미등록'}); return; }
     const qty = factor*recipeQty;
-    const amount = qty*(g.perUnit||0);
-    log({phase:'식재료', name:g.name, factor:Number(factor.toFixed(3)), recipeQty, qtyContribution:Number(qty.toFixed(2)), perUnit:g.perUnit||0, amountContribution:Math.round(amount)});
+    const effPU = getEffectiveUnitCost(g);
+    const amount = qty*effPU;
+    log({phase:'식재료', name:g.name, factor:Number(factor.toFixed(3)), recipeQty, qtyContribution:Number(qty.toFixed(2)), perUnit:effPU, amountContribution:Math.round(amount)});
     const key=`식재료|${g.name}|${g.vendor||''}`;
     const ex=demand.get(key);
-    if(ex){ ex.qty += qty; ex.amount = ex.qty * (g.perUnit||0); }
-    else demand.set(key, {kind:'식재료', name:g.name, vendor:g.vendor||'미지정', unit:g.wu||'g', qty, perUnit:g.perUnit||0, amount});
+    if(ex){ ex.qty += qty; ex.amount = ex.qty * effPU; }
+    else demand.set(key, {kind:'식재료', name:g.name, vendor:g.vendor||'미지정', unit:g.wu||'g', qty, perUnit:effPU, amount});
   } else if(t==='주류'){
     const g = liquors.find(x=>x.name===it.name);
     if(!g){ log({phase:'주류-MISS', name:it.name, recipeQty, warn:'⚠️ 주류 미등록'}); return; }
@@ -2679,6 +2692,38 @@ function calcMenuCh(m_or_items,hp,dp,fCost,sCost,feeRate,pkgCost){
 }
 
 let priceMode='base'; // 'base' | 'today' | 'monthly'
+
+// 부가세 모드: 'include' = 부가세 포함 원가 사용 (기본, 기존 동작 유지)
+//             'exclude' = 과세 식재료에서 매입세액공제 환급분(10/110) 차감 후 원가 사용
+let vatMode='include';
+try{
+  const saved=localStorage.getItem('vatMode');
+  if(saved==='include'||saved==='exclude') vatMode=saved;
+}catch(_){}
+
+// 식재료 단위원가를 부가세 모드에 맞게 환산해 반환.
+// include 모드면 원본 그대로, exclude 모드 + taxable이면 ×100/110 적용.
+function getEffectiveUnitCost(ingredient){
+  if(!ingredient) return 0;
+  const pu=Number(ingredient.perUnit)||0;
+  if(vatMode==='exclude' && ingredient.taxType==='taxable') return pu*100/110;
+  return pu;
+}
+
+function setVatMode(mode){
+  if(mode!=='include'&&mode!=='exclude') return;
+  vatMode=mode;
+  try{ localStorage.setItem('vatMode', mode); }catch(_){}
+  // 토글 라디오 UI 동기화
+  document.querySelectorAll('input[name="vat-mode"]').forEach(r=>{ r.checked=(r.value===mode); });
+  // 모든 원가 재계산 후 화면 갱신
+  try{ recalcAllCosts(); }catch(_){}
+  try{ renderDash&&renderDash(); }catch(_){}
+  try{ renderMenuList&&renderMenuList(); }catch(_){}
+  try{ renderOrderSheet&&renderOrderSheet(); }catch(_){}
+  try{ renderTdRates&&renderTdRates(); }catch(_){}
+  try{ renderMonthlyRates&&renderMonthlyRates(); }catch(_){}
+}
 
 function setPriceMode(m){
   priceMode=m;
@@ -5150,6 +5195,8 @@ function exportSalesXlsx(){
 }
 
 // ── 초기화 ──
+// 부가세 토글 라디오 초기 상태 동기화 (localStorage에서 복원한 vatMode 반영)
+document.querySelectorAll('input[name="vat-mode"]').forEach(r=>{ r.checked=(r.value===vatMode); });
 toggleCh();
 document.getElementById('p-sa').classList.add('on');
 if(document.getElementById('menu-form-area'))document.getElementById('menu-form-area').style.display='none';
