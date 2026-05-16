@@ -275,18 +275,6 @@ tbody tr:hover td{background:var(--surface2)}
 <div class="page on" id="p-dash">
   <div class="page-title">대시보드</div>
   <div class="page-desc">전체 메뉴 원가율을 한눈에 확인하세요</div>
-  <div id="vat-mode-bar" style="display:flex;align-items:center;gap:14px;padding:10px 14px;margin-bottom:12px;background:var(--info-l);border:1px dashed var(--info);border-radius:var(--radius-sm);font-size:13px;flex-wrap:wrap">
-    <span style="font-weight:600;color:var(--info)">💰 원가 기준</span>
-    <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
-      <input type="radio" name="vat-mode" value="include" onchange="setVatMode('include')"> 부가세 포함
-      <span style="color:var(--text3);font-size:11px">(납품가 그대로)</span>
-    </label>
-    <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
-      <input type="radio" name="vat-mode" value="exclude" onchange="setVatMode('exclude')"> 부가세 제외
-      <span style="color:var(--text3);font-size:11px">(과세 식재료의 환급분 차감)</span>
-    </label>
-    <span style="margin-left:auto;font-size:11px;color:var(--text3)">설정은 자동 저장됩니다</span>
-  </div>
   <div class="metrics" id="d-metrics"></div>
   <div class="card">
     <div class="itb">
@@ -311,6 +299,18 @@ tbody tr:hover td{background:var(--surface2)}
 <div class="page" id="p-price">
   <div class="page-title">단가 관리</div>
   <div class="page-desc">오늘 납품 단가를 입력하고 메뉴별 원가율 변화를 확인하세요</div>
+  <div id="vat-mode-bar" style="display:flex;align-items:center;gap:14px;padding:10px 14px;margin-bottom:14px;background:var(--info-l);border:1px dashed var(--info);border-radius:var(--radius-sm);font-size:13px;flex-wrap:wrap">
+    <span style="font-weight:600;color:var(--info)">💰 원가 기준</span>
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="radio" name="vat-mode" value="include" onchange="setVatMode('include')"> 부가세 포함
+      <span style="color:var(--text3);font-size:11px">(납품가 그대로)</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="radio" name="vat-mode" value="exclude" onchange="setVatMode('exclude')"> 부가세 제외
+      <span style="color:var(--text3);font-size:11px">(과세 식재료의 환급분 차감)</span>
+    </label>
+    <span style="margin-left:auto;font-size:11px;color:var(--text3)">설정은 자동 저장 · 전체 화면 원가에 즉시 반영</span>
+  </div>
   <div class="itb">
     <div class="it on" onclick="swP('today',this)">오늘 단가 입력</div>
     <div class="it" onclick="swP('history',this)">단가 이력 & 월 평균</div>
