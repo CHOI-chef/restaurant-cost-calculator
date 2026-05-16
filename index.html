@@ -256,6 +256,16 @@ tbody tr:hover td{background:var(--surface2)}
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
     <span>밑반찬</span>
   </div>
+  <div class="nav" data-page="fixed" onclick="navigate(this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    <span>고정비</span>
+    <span class="nav-badge" id="b-fc">0</span>
+  </div>
+  <div class="nav" data-page="labor" onclick="navigate(this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <span>인건비</span>
+    <span class="nav-badge" id="b-lb">0</span>
+  </div>
   <div class="sb-div"></div>
   <div class="sb-label">메뉴</div>
   <div class="nav" data-page="menu" onclick="navigate(this)">
@@ -840,6 +850,68 @@ tbody tr:hover td{background:var(--surface2)}
   </div>
 </div>
 
+<!-- 고정비 -->
+<div class="page" id="p-fixed">
+  <div class="page-title">고정비</div>
+  <div class="page-desc">임차료·통신비·관리비 등 매월 반복 지출을 기록합니다. (입력·표시 전용 — 분석/계산 미연동)</div>
+  <div class="card">
+    <div class="card-title"><span class="card-dot"></span>새 고정비 등록</div>
+    <div class="notice n-info">과세 항목은 총금액의 약 <b>9.1%</b>(10/110)가 부가세입니다. 면세·부가세없음 항목은 부가세 0으로 처리됩니다.</div>
+    <div class="row">
+      <div class="fg f2"><div class="fl">항목명</div><input id="fc-name" placeholder="예) 임차료, 통신비, 보험료"></div>
+      <div class="fg"><div class="fl">총금액 <span style="color:var(--text3);font-size:11px">(부가세 포함)</span></div><input id="fc-amount" type="number" placeholder="원" oninput="updateFcSplitPreview()"></div>
+      <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addFixedCost()">+ 등록</button></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="fg" style="flex:1">
+        <div class="fl">부가세 구분</div>
+        <div style="display:flex;gap:14px;align-items:center;height:34px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="fc-tax" value="exempt" checked onchange="updateFcSplitPreview()"> 면세·부가세없음 <span style="color:var(--text3);font-size:11px">(부가세 0)</span></label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="fc-tax" value="taxable" onchange="updateFcSplitPreview()"> 과세 <span style="color:var(--text3);font-size:11px">(부가세 10/110 포함)</span></label>
+        </div>
+      </div>
+    </div>
+    <div id="fc-split-preview" style="margin-top:8px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);display:none">
+      <span>입력 분리: 공급가 <b id="fc-prev-supply" style="font-family:'DM Mono',monospace;color:var(--text)">0</b>원 + 부가세 <b id="fc-prev-vat" style="font-family:'DM Mono',monospace;color:var(--text)">0</b>원</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="card-dot"></span>등록된 고정비</div>
+    <div class="tw"><table><thead><tr><th>항목명</th><th>부가세 구분</th><th style="text-align:right">총금액</th><th style="text-align:right">부가세</th><th></th></tr></thead>
+    <tbody id="fc-table"><tr class="empty"><td colspan="5">등록된 고정비가 없어요</td></tr></tbody></table></div>
+  </div>
+</div>
+
+<!-- 인건비 -->
+<div class="page" id="p-labor">
+  <div class="page-title">인건비</div>
+  <div class="page-desc">직원별 실지급액과 근무형태를 기록합니다. (입력·표시 전용 — 4대보험 사장부담금·세금 자동계산 없음)</div>
+  <div class="card">
+    <div class="card-title"><span class="card-dot"></span>새 인건비 등록</div>
+    <div class="notice n-info">급여는 실제 지급되는 금액(실지급액)으로 입력하세요. 4대보험 사장 부담금이나 세금 자동계산은 이번 버전 범위가 아닙니다.</div>
+    <div class="row">
+      <div class="fg f2"><div class="fl">이름</div><input id="lc-name" placeholder="예) 홍길동"></div>
+      <div class="fg"><div class="fl">직급 <span style="color:var(--text3);font-size:11px">(선택)</span></div><input id="lc-position" placeholder="예) 홀매니저, 주방장"></div>
+      <div class="fg"><div class="fl">급여 <span style="color:var(--text3);font-size:11px">(실지급액)</span></div><input id="lc-salary" type="number" placeholder="원"></div>
+      <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addLabor()">+ 등록</button></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="fg" style="flex:1">
+        <div class="fl">근무형태</div>
+        <div style="display:flex;gap:14px;align-items:center;height:34px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="lc-emp" value="withholding" checked> 원천징수 <span style="color:var(--text3);font-size:11px">(3.3% 단기·프리랜서)</span></label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="lc-emp" value="insurance"> 4대보험 <span style="color:var(--text3);font-size:11px">(정규직)</span></label>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="card-dot"></span>등록된 인건비</div>
+    <div class="tw"><table><thead><tr><th>이름</th><th>직급</th><th style="text-align:right">급여</th><th>근무형태</th><th></th></tr></thead>
+    <tbody id="lc-table"><tr class="empty"><td colspan="5">등록된 인건비가 없어요</td></tr></tbody></table></div>
+  </div>
+</div>
+
 <!-- 메뉴 레시피 -->
 <div class="page" id="p-menu">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
@@ -941,6 +1013,8 @@ tbody tr:hover td{background:var(--surface2)}
 
 <script>
 let ingredients=[],compounds=[],cpItems=[],consumables=[],liquors=[],sideA=[],sideMethod='A',menus=[],rItems=[],selCsIds=[],priceHistory=[],salesHistory=[],menuSales=[],cookingSteps=[];
+// 고정비·인건비 (입력·저장·표시 전용 — 계산 미연동)
+let fixedCosts=[], labors=[];
 let dashFilter='all';
 
 const fmt=n=>Math.round(n).toLocaleString();
@@ -1046,7 +1120,7 @@ function updateVendorLists(){
   const cs=document.getElementById('i-cat-sel');if(cs){const c=cs.value;cs.innerHTML='<option value="">선택 또는</option>'+cats.map(v=>`<option value="${v}">${v}</option>`).join('');if(c)cs.value=c;}
   const cf=document.getElementById('ing-cat-filter');if(cf){const c=cf.value;cf.innerHTML='<option value="">전체 대분류</option>'+cats.map(v=>`<option value="${v}">${v}</option>`).join('');if(c)cf.value=c;}
 }
-function updateBadges(){document.getElementById('b-ing').textContent=ingredients.length;document.getElementById('b-cp').textContent=compounds.length;document.getElementById('b-lq').textContent=liquors.length;document.getElementById('b-menu').textContent=menus.length;}
+function updateBadges(){document.getElementById('b-ing').textContent=ingredients.length;document.getElementById('b-cp').textContent=compounds.length;document.getElementById('b-lq').textContent=liquors.length;document.getElementById('b-menu').textContent=menus.length;const bfc=document.getElementById('b-fc');if(bfc)bfc.textContent=fixedCosts.length;const blb=document.getElementById('b-lb');if(blb)blb.textContent=labors.length;}
 
 // 식재료 CRUD
 async function addIng(){
@@ -1123,6 +1197,285 @@ async function saveIngEdit(){
   renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateBadges();recalcAllCosts();toast('수정 완료 — 레시피 원가 재계산됨');
   if(currentUser){setSyncStatus('저장 중...');await saveIng(g);setSyncStatus('');}
 }
+
+// ===== 고정비 CRUD (입력·저장·표시 전용 — 계산 미연동) =====
+function _fcSplit(amount, taxType){
+  const total=Number(amount)||0;
+  if(taxType==='taxable'){
+    const supply=Math.round(total*100/110);
+    const vat=total-supply;
+    return {supply, vat};
+  }
+  return {supply: total, vat: 0};
+}
+function updateFcSplitPreview(){
+  const amt=parseFloat(document.getElementById('fc-amount').value)||0;
+  const tax=(document.querySelector('input[name="fc-tax"]:checked')||{}).value||'exempt';
+  const box=document.getElementById('fc-split-preview');
+  if(!amt){box.style.display='none';return;}
+  const {supply, vat}=_fcSplit(amt, tax);
+  document.getElementById('fc-prev-supply').textContent=fmt(supply);
+  document.getElementById('fc-prev-vat').textContent=fmt(vat);
+  box.style.display='block';
+}
+function updateEditFcSplitPreview(){
+  const amt=parseFloat(document.getElementById('edit-fc-amount').value)||0;
+  const tax=(document.querySelector('input[name="edit-fc-tax"]:checked')||{}).value||'exempt';
+  const box=document.getElementById('edit-fc-split-preview');
+  if(!amt){box.style.display='none';return;}
+  const {supply, vat}=_fcSplit(amt, tax);
+  document.getElementById('edit-fc-prev-supply').textContent=fmt(supply);
+  document.getElementById('edit-fc-prev-vat').textContent=fmt(vat);
+  box.style.display='block';
+}
+async function addFixedCost(){
+  const name=document.getElementById('fc-name').value.trim();
+  const amount=parseFloat(document.getElementById('fc-amount').value);
+  const taxType=(document.querySelector('input[name="fc-tax"]:checked')||{}).value||'exempt';
+  if(!name||!amount) return alert('항목명과 총금액을 입력해주세요');
+  const item={name, taxType, amount};
+  fixedCosts.push(item);
+  document.getElementById('fc-name').value='';
+  document.getElementById('fc-amount').value='';
+  const exemptRadio=document.querySelector('input[name="fc-tax"][value="exempt"]');
+  if(exemptRadio)exemptRadio.checked=true;
+  document.getElementById('fc-split-preview').style.display='none';
+  renderFixedCostT();updateBadges();toast('고정비 등록 완료');
+  if(currentUser){setSyncStatus('저장 중...');await saveFcDB(item);setSyncStatus('');}
+}
+async function delFixedCost(i){
+  if(!confirm(`'${fixedCosts[i].name}' 삭제?`))return;
+  const item=fixedCosts[i];
+  fixedCosts.splice(i,1);
+  renderFixedCostT();updateBadges();
+  if(currentUser&&item._id){await delFcDB(item._id);}
+}
+function openFcEdit(i){
+  const g=fixedCosts[i];
+  document.getElementById('edit-fc-idx').value=i;
+  document.getElementById('edit-fc-name').value=g.name||'';
+  document.getElementById('edit-fc-amount').value=g.amount||'';
+  const taxRadio=document.querySelector(`input[name="edit-fc-tax"][value="${g.taxType||'exempt'}"]`);
+  if(taxRadio)taxRadio.checked=true;
+  updateEditFcSplitPreview();
+  document.getElementById('fc-edit-modal').style.display='flex';
+}
+function closeFcEdit(){document.getElementById('fc-edit-modal').style.display='none';}
+async function saveFcEdit(){
+  const i=parseInt(document.getElementById('edit-fc-idx').value);
+  const g=fixedCosts[i];
+  g.name=document.getElementById('edit-fc-name').value.trim();
+  g.amount=parseFloat(document.getElementById('edit-fc-amount').value)||0;
+  g.taxType=(document.querySelector('input[name="edit-fc-tax"]:checked')||{}).value||'exempt';
+  closeFcEdit();
+  renderFixedCostT();updateBadges();toast('고정비 수정 완료');
+  if(currentUser){setSyncStatus('저장 중...');await saveFcDB(g);setSyncStatus('');}
+}
+function renderFixedCostT(){
+  const tb=document.getElementById('fc-table');
+  if(!tb) return;
+  if(!fixedCosts.length){tb.innerHTML='<tr class="empty"><td colspan="5">등록된 고정비가 없어요</td></tr>';return;}
+  tb.innerHTML=fixedCosts.map((g,i)=>{
+    const {vat}=_fcSplit(g.amount, g.taxType);
+    const badge=g.taxType==='taxable'
+      ?'<span class="badge b-warn" style="font-size:10px">과세</span>'
+      :'<span class="badge b-gray" style="font-size:10px">면세·없음</span>';
+    const vatCell=g.taxType==='taxable'
+      ?`<span style="font-family:'DM Mono',monospace;color:var(--text2)">${fmt(vat)}원</span>`
+      :'<span style="color:var(--text3)">—</span>';
+    return `<tr>
+      <td style="font-weight:600">${g.name}</td>
+      <td>${badge}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:600">${fmt(g.amount)}원</td>
+      <td style="text-align:right">${vatCell}</td>
+      <td style="display:flex;gap:4px;justify-content:flex-end">
+        <button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="openFcEdit(${i})">수정</button>
+        <button class="del-btn" onclick="delFixedCost(${i})">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+async function saveFcDB(item){
+  if(!currentUser) return;
+  const isUpdate=!!item._id;
+  const row={
+    user_id: currentUser.id,
+    name: item.name,
+    tax_type: (item.taxType==='taxable'||item.taxType==='exempt') ? item.taxType : 'exempt',
+    amount: Number(item.amount)||0
+  };
+  const url=isUpdate
+    ? `${SUPA_URL}/rest/v1/fixed_costs?id=eq.${encodeURIComponent(item._id)}`
+    : `${SUPA_URL}/rest/v1/fixed_costs`;
+  try{
+    const res=await fetch(url,{
+      method: isUpdate?'PATCH':'POST',
+      headers:{
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(row)
+    });
+    const text=await res.text();
+    let data; try{data=text?JSON.parse(text):null;}catch(e){data=text;}
+    if(!res.ok){
+      console.error('[saveFcDB] 저장 실패', res.status, data);
+      const blob=JSON.stringify(data||'');
+      if(/fixed_costs|relation .* does not exist|schema cache/i.test(blob)){
+        toast('⚠️ fixed_costs 테이블 미발견 — 자동 도우미 띄움');
+        const mig=SCHEMA_MIGRATIONS.find(m=>m.id==='fixed_costs_table');
+        if(mig) openSqlHelper([mig]);
+      } else if(res.status===401||res.status===403){
+        toast('⚠️ 인증/권한 오류 — 다시 로그인 필요');
+      } else {
+        toast(`⚠️ 고정비 저장 실패 (HTTP ${res.status})`);
+      }
+      return;
+    }
+    if(Array.isArray(data)&&data[0]) item._id=data[0].id;
+  }catch(e){
+    console.error('[saveFcDB] 네트워크/예외', e);
+    toast('⚠️ 고정비 저장 중 네트워크 오류');
+  }
+}
+async function delFcDB(id){
+  if(!currentUser) return;
+  try{
+    await fetch(`${SUPA_URL}/rest/v1/fixed_costs?id=eq.${encodeURIComponent(id)}`,{
+      method:'DELETE',
+      headers:{
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`
+      }
+    });
+  }catch(e){console.error('[delFcDB] 실패', e);}
+}
+
+// ===== 인건비 CRUD (입력·저장·표시 전용 — 4대보험·세금 자동계산 없음) =====
+async function addLabor(){
+  const name=document.getElementById('lc-name').value.trim();
+  const position=document.getElementById('lc-position').value.trim();
+  const salary=parseFloat(document.getElementById('lc-salary').value);
+  const empType=(document.querySelector('input[name="lc-emp"]:checked')||{}).value||'withholding';
+  if(!name||!salary) return alert('이름과 급여를 입력해주세요');
+  const item={name, position, salary, empType};
+  labors.push(item);
+  ['lc-name','lc-position','lc-salary'].forEach(id=>document.getElementById(id).value='');
+  const withRadio=document.querySelector('input[name="lc-emp"][value="withholding"]');
+  if(withRadio)withRadio.checked=true;
+  renderLaborT();updateBadges();toast('인건비 등록 완료');
+  if(currentUser){setSyncStatus('저장 중...');await saveLcDB(item);setSyncStatus('');}
+}
+async function delLabor(i){
+  if(!confirm(`'${labors[i].name}' 삭제?`))return;
+  const item=labors[i];
+  labors.splice(i,1);
+  renderLaborT();updateBadges();
+  if(currentUser&&item._id){await delLcDB(item._id);}
+}
+function openLcEdit(i){
+  const g=labors[i];
+  document.getElementById('edit-lc-idx').value=i;
+  document.getElementById('edit-lc-name').value=g.name||'';
+  document.getElementById('edit-lc-position').value=g.position||'';
+  document.getElementById('edit-lc-salary').value=g.salary||'';
+  const empRadio=document.querySelector(`input[name="edit-lc-emp"][value="${g.empType||'withholding'}"]`);
+  if(empRadio)empRadio.checked=true;
+  document.getElementById('lc-edit-modal').style.display='flex';
+}
+function closeLcEdit(){document.getElementById('lc-edit-modal').style.display='none';}
+async function saveLcEdit(){
+  const i=parseInt(document.getElementById('edit-lc-idx').value);
+  const g=labors[i];
+  g.name=document.getElementById('edit-lc-name').value.trim();
+  g.position=document.getElementById('edit-lc-position').value.trim();
+  g.salary=parseFloat(document.getElementById('edit-lc-salary').value)||0;
+  g.empType=(document.querySelector('input[name="edit-lc-emp"]:checked')||{}).value||'withholding';
+  closeLcEdit();
+  renderLaborT();updateBadges();toast('인건비 수정 완료');
+  if(currentUser){setSyncStatus('저장 중...');await saveLcDB(g);setSyncStatus('');}
+}
+function renderLaborT(){
+  const tb=document.getElementById('lc-table');
+  if(!tb) return;
+  if(!labors.length){tb.innerHTML='<tr class="empty"><td colspan="5">등록된 인건비가 없어요</td></tr>';return;}
+  tb.innerHTML=labors.map((g,i)=>{
+    const badge=g.empType==='insurance'
+      ?'<span class="badge b-info" style="font-size:10px">4대보험</span>'
+      :'<span class="badge b-gray" style="font-size:10px">원천징수 3.3%</span>';
+    return `<tr>
+      <td style="font-weight:600">${g.name}</td>
+      <td>${g.position||'<span style="color:var(--text3)">—</span>'}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:600">${fmt(g.salary)}원</td>
+      <td>${badge}</td>
+      <td style="display:flex;gap:4px;justify-content:flex-end">
+        <button class="del-btn" style="background:var(--info-l);color:var(--info);font-size:12px" onclick="openLcEdit(${i})">수정</button>
+        <button class="del-btn" onclick="delLabor(${i})">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+async function saveLcDB(item){
+  if(!currentUser) return;
+  const isUpdate=!!item._id;
+  const row={
+    user_id: currentUser.id,
+    name: item.name,
+    position: item.position||'',
+    salary: Number(item.salary)||0,
+    employment_type: (item.empType==='insurance'||item.empType==='withholding') ? item.empType : 'withholding'
+  };
+  const url=isUpdate
+    ? `${SUPA_URL}/rest/v1/labor_costs?id=eq.${encodeURIComponent(item._id)}`
+    : `${SUPA_URL}/rest/v1/labor_costs`;
+  try{
+    const res=await fetch(url,{
+      method: isUpdate?'PATCH':'POST',
+      headers:{
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(row)
+    });
+    const text=await res.text();
+    let data; try{data=text?JSON.parse(text):null;}catch(e){data=text;}
+    if(!res.ok){
+      console.error('[saveLcDB] 저장 실패', res.status, data);
+      const blob=JSON.stringify(data||'');
+      if(/labor_costs|relation .* does not exist|schema cache/i.test(blob)){
+        toast('⚠️ labor_costs 테이블 미발견 — 자동 도우미 띄움');
+        const mig=SCHEMA_MIGRATIONS.find(m=>m.id==='labor_costs_table');
+        if(mig) openSqlHelper([mig]);
+      } else if(res.status===401||res.status===403){
+        toast('⚠️ 인증/권한 오류 — 다시 로그인 필요');
+      } else {
+        toast(`⚠️ 인건비 저장 실패 (HTTP ${res.status})`);
+      }
+      return;
+    }
+    if(Array.isArray(data)&&data[0]) item._id=data[0].id;
+  }catch(e){
+    console.error('[saveLcDB] 네트워크/예외', e);
+    toast('⚠️ 인건비 저장 중 네트워크 오류');
+  }
+}
+async function delLcDB(id){
+  if(!currentUser) return;
+  try{
+    await fetch(`${SUPA_URL}/rest/v1/labor_costs?id=eq.${encodeURIComponent(id)}`,{
+      method:'DELETE',
+      headers:{
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token || SUPA_KEY}`
+      }
+    });
+  }catch(e){console.error('[delLcDB] 실패', e);}
+}
+
 // ===== 별칭(alias) 매핑 유틸 =====
 // 쉼표 구분 문자열 → 중복 제거된 별칭 배열
 function parseAliases(s){
@@ -1511,6 +1864,45 @@ CREATE POLICY IF NOT EXISTS "user owns row" ON menu_sales
     column: 'cooking_steps',
     sql: "ALTER TABLE menus ADD COLUMN IF NOT EXISTS cooking_steps jsonb DEFAULT '[]'::jsonb;",
     desc: '메뉴 조리 단계 (화력/시간/설명/포인트/사진URL) — 교육자료 출력 기반'
+  },
+  {
+    id: 'fixed_costs_table',
+    table: 'fixed_costs',
+    column: 'tax_type',
+    sql: `CREATE TABLE IF NOT EXISTS fixed_costs (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid REFERENCES auth.users,
+  name text NOT NULL,
+  tax_type text NOT NULL DEFAULT 'exempt'
+    CHECK (tax_type IN ('taxable', 'exempt')),
+  amount numeric NOT NULL DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE fixed_costs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "user owns row" ON fixed_costs;
+CREATE POLICY "user owns row" ON fixed_costs
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);`,
+    desc: '고정비 — 임차료/통신비 등 매월 반복 지출 (입력·표시 전용, 계산 미연동)'
+  },
+  {
+    id: 'labor_costs_table',
+    table: 'labor_costs',
+    column: 'employment_type',
+    sql: `CREATE TABLE IF NOT EXISTS labor_costs (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid REFERENCES auth.users,
+  name text NOT NULL,
+  position text DEFAULT '',
+  salary numeric NOT NULL DEFAULT 0,
+  employment_type text NOT NULL DEFAULT 'withholding'
+    CHECK (employment_type IN ('insurance', 'withholding')),
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE labor_costs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "user owns row" ON labor_costs;
+CREATE POLICY "user owns row" ON labor_costs
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);`,
+    desc: '인건비 — 직원별 실지급액·근무형태(4대보험/원천징수) (입력·표시 전용, 계산 미연동)'
   }
 ];
 
@@ -3616,7 +4008,7 @@ async function loadAllData() {
     const base = `${SUPA_URL}/rest/v1`;
     const uid = currentUser.id;
 
-    const [ing, comp, cons, liq, side, menu, ph, ms, msales] = await Promise.all([
+    const [ing, comp, cons, liq, side, menu, ph, ms, msales, fc, lc] = await Promise.all([
       fetch(`${base}/ingredients?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.json()),
       fetch(`${base}/compounds?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.json()),
       fetch(`${base}/consumables?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.json()),
@@ -3626,6 +4018,9 @@ async function loadAllData() {
       fetch(`${base}/price_history?user_id=eq.${uid}&order=date.desc`, { headers }).then(r => r.json()),
       fetch(`${base}/monthly_sales?user_id=eq.${uid}&order=year_month.desc`, { headers }).then(r => r.json()),
       fetch(`${base}/menu_sales?user_id=eq.${uid}&order=updated_at.desc`, { headers }).then(r => r.ok?r.json():[]).catch(()=>[]),
+      // 신규 테이블 — DB에 아직 안 만든 상태에서도 기존 데이터 로드 안 깨지게 .catch로 빈배열 fallback
+      fetch(`${base}/fixed_costs?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.ok?r.json():[]).catch(()=>[]),
+      fetch(`${base}/labor_costs?user_id=eq.${uid}&order=created_at`, { headers }).then(r => r.ok?r.json():[]).catch(()=>[]),
     ]);
 
     console.log('로드 결과:', { ing: ing?.length, comp: comp?.length, menu: menu?.length });
@@ -3776,6 +4171,21 @@ async function loadAllData() {
       }
     }
 
+    // 고정비·인건비 — 신규 테이블이 없으면 fc/lc가 [] 라 안전. 입력·표시 전용, 계산 미연동.
+    fixedCosts = (Array.isArray(fc) ? fc : []).map(r => ({
+      _id: r.id, id: r.id,
+      name: r.name || '',
+      taxType: (r.tax_type==='taxable'||r.tax_type==='exempt') ? r.tax_type : 'exempt',
+      amount: Number(r.amount) || 0
+    }));
+    labors = (Array.isArray(lc) ? lc : []).map(r => ({
+      _id: r.id, id: r.id,
+      name: r.name || '',
+      position: r.position || '',
+      salary: Number(r.salary) || 0,
+      empType: (r.employment_type==='insurance'||r.employment_type==='withholding') ? r.employment_type : 'withholding'
+    }));
+
     // DB 로드 직후 자체제조 perG / 메뉴 r.cost 재계산 — 마지막 저장 이후
     // 식재료 시세나 자체제조 yld가 다른 기기/세션에서 변경됐을 수 있으므로 반드시 한 번 동기화.
     // (이걸 안 하면 메뉴 목록이 stale r.cost를 표시하면서 발주 예측만 fresh 값을 써서 두 화면이 N배 차이남)
@@ -3789,6 +4199,7 @@ async function loadAllData() {
     renderSalesHist();renderSalesChart();
     renderMenuList();
     renderOrderInput(); renderOrderSheet(); renderRevenueBased();
+    renderFixedCostT(); renderLaborT();
     updateBadges();
     setSyncStatus('');
     toast('✅ 데이터 로드 완료');
@@ -5200,6 +5611,7 @@ document.getElementById('pp-today').classList.add('on');
 loadRevenueInput();
 renderDash();
 renderRevenueBased();
+renderFixedCostT(); renderLaborT();
 updateBadges();
 
 // 로그인 상태 확인 - fetch로 직접 테스트
@@ -5334,6 +5746,60 @@ updateBadges();
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="closeMenuEdit()">취소</button>
       <button class="btn btn-p" onclick="saveMenuEdit()">수정 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 고정비 수정 모달 -->
+<div id="fc-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:28px;width:520px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto">
+    <div style="font-size:16px;font-weight:700;margin-bottom:20px;color:var(--text)">고정비 수정</div>
+    <input type="hidden" id="edit-fc-idx">
+    <div class="row" style="margin-bottom:10px">
+      <div class="fg f2"><div class="fl">항목명</div><input id="edit-fc-name"></div>
+      <div class="fg"><div class="fl">총금액</div><input id="edit-fc-amount" type="number" oninput="updateEditFcSplitPreview()"></div>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="fg" style="flex:1">
+        <div class="fl">부가세 구분</div>
+        <div style="display:flex;gap:14px;align-items:center;height:34px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="edit-fc-tax" value="exempt" onchange="updateEditFcSplitPreview()"> 면세·부가세없음</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="edit-fc-tax" value="taxable" onchange="updateEditFcSplitPreview()"> 과세</label>
+        </div>
+      </div>
+    </div>
+    <div id="edit-fc-split-preview" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);margin-bottom:14px;display:none">
+      <span>공급가 <b id="edit-fc-prev-supply" style="font-family:'DM Mono',monospace;color:var(--text)">0</b>원 + 부가세 <b id="edit-fc-prev-vat" style="font-family:'DM Mono',monospace;color:var(--text)">0</b>원</span>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeFcEdit()">취소</button>
+      <button class="btn btn-p" onclick="saveFcEdit()">수정 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 인건비 수정 모달 -->
+<div id="lc-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:28px;width:520px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto">
+    <div style="font-size:16px;font-weight:700;margin-bottom:20px;color:var(--text)">인건비 수정</div>
+    <input type="hidden" id="edit-lc-idx">
+    <div class="row" style="margin-bottom:10px">
+      <div class="fg f2"><div class="fl">이름</div><input id="edit-lc-name"></div>
+      <div class="fg"><div class="fl">직급</div><input id="edit-lc-position"></div>
+      <div class="fg"><div class="fl">급여</div><input id="edit-lc-salary" type="number"></div>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <div class="fg" style="flex:1">
+        <div class="fl">근무형태</div>
+        <div style="display:flex;gap:14px;align-items:center;height:34px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="edit-lc-emp" value="withholding"> 원천징수</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="edit-lc-emp" value="insurance"> 4대보험</label>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeLcEdit()">취소</button>
+      <button class="btn btn-p" onclick="saveLcEdit()">수정 저장</button>
     </div>
   </div>
 </div>
