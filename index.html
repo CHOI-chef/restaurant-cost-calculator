@@ -4338,7 +4338,6 @@ function openCookingStepsModal(id, type){
   currentEditingType = type;
   currentEditingSteps = normalizeCookingSteps(entity.cookingSteps || []);
   _csInitialSnapshot = JSON.stringify(currentEditingSteps);
-  console.log('[조리법모달] 열기', { type, id, name: entity.name, stepCount: currentEditingSteps.length }); // [DEBUG-TEMP] 검증 후 제거
   document.getElementById('cs-modal-menu-name').textContent = entity.name || '(이름 없음)';
   const modal = document.getElementById('cookingStepsModal');
   modal.style.display = 'flex';
@@ -4616,7 +4615,6 @@ async function removePhoto(stepIndex, slotIndex){
 async function saveCookingSteps(){
   const id = currentEditingMenuId;
   const type = currentEditingType || 'menu';
-  console.log('[saveCookingSteps] 진입', { id, type, stepCount: (currentEditingSteps||[]).length }); // [DEBUG-TEMP] 검증 후 제거
   if(!id){ alert('현재 편집 중인 ID가 없습니다.'); console.warn('[saveCookingSteps] id 없음 — 모달이 제대로 열리지 않은 상태'); return; }
   // 엔티티 lookup (type별)
   const entity = (type === 'compound')
@@ -4641,7 +4639,6 @@ async function saveCookingSteps(){
   try {
     const token = (await sb.auth.getSession()).data.session?.access_token || (typeof accessToken!=='undefined' ? accessToken : null) || SUPA_KEY;
     const url = `${SUPA_URL}/rest/v1/${tableName}?id=eq.${encodeURIComponent(id)}`;
-    console.log('[saveCookingSteps] PATCH 요청', { url, stepCount: toSave.length, hasToken: !!token && token !== SUPA_KEY }); // [DEBUG-TEMP] 검증 후 제거
     const res = await fetch(url, {
       method: 'PATCH',
       headers: {
@@ -4654,7 +4651,6 @@ async function saveCookingSteps(){
     });
     const text = await res.text();
     let data; try{ data = text ? JSON.parse(text) : null; } catch(e){ data = text; }
-    console.log('[saveCookingSteps] PATCH 응답', { status: res.status, ok: res.ok, dataLen: Array.isArray(data)?data.length:typeof data }); // [DEBUG-TEMP] 검증 후 제거
     if(!res.ok){
       console.error('[saveCookingSteps] HTTP', res.status, data);
       const blob = JSON.stringify(data||'');
