@@ -507,8 +507,33 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="fg"><div class="fl">단위당 실제 중량</div><input id="i-weight" type="number" placeholder="숫자"></div>
       <div class="fg" style="max-width:80px"><div class="fl">단위</div><select id="i-wu"><option value="g">g</option><option value="ml">ml</option><option value="개">개</option></select></div>
       <div class="fg"><div class="fl">납품 가격</div><input id="i-price" type="number" placeholder="원"></div>
-      <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="i-waste" type="number" placeholder="0" min="0" max="99" value="0"></div>
+      <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="i-waste" type="number" placeholder="0" min="0" max="99" value="0" readonly style="background:#f5f5f5;color:var(--text2)"></div>
       <div class="fg" style="max-width:80px;justify-content:flex-end"><div class="fl">&nbsp;</div><button class="btn btn-p" onclick="addIng()">+ 등록</button></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="fg" style="flex:1.2">
+        <div class="fl">수율 카테고리 <span class="badge b-warn" style="font-size:10px;margin-left:4px">베타</span> <span style="color:var(--text3);font-size:11px">— 카테고리 선택 시 폐기율 자동 입력</span></div>
+        <select id="i-yield-cat" onchange="onYieldCatChange('i')" style="height:34px">
+          <option value="기타">기타 / 직접 입력</option>
+          <option value="엽채류">엽채류 (잎채소)</option>
+          <option value="근채류">근채류 (뿌리채소)</option>
+          <option value="과채류">과채류 (열매채소)</option>
+          <option value="육류-정형전">육류 (정형 전)</option>
+          <option value="육류-정형후">육류 (정형 후)</option>
+          <option value="어류-통마리">어류 (통마리)</option>
+          <option value="어류-손질">어류 (손질됨)</option>
+        </select>
+      </div>
+      <div class="fg" id="i-prep-wrap" style="flex:1;display:none">
+        <div class="fl">손질 상태</div>
+        <div style="display:flex;gap:12px;align-items:center;height:34px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="i-prep" value="before" checked onchange="onYieldCatChange('i')"> 손질 전</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="i-prep" value="after" onchange="onYieldCatChange('i')"> 손질 후</label>
+        </div>
+      </div>
+      <div class="fg" style="flex:2;align-self:flex-end">
+        <div id="i-yield-hint" style="font-size:11px;color:var(--text3);height:34px;display:flex;align-items:center">⚠️ 폐기율은 베타 추정값입니다 — 정식 데이터로 교체 예정</div>
+      </div>
     </div>
     <div class="row" style="margin-top:8px">
       <div class="fg" style="flex:1">
@@ -541,6 +566,7 @@ tbody tr:hover td{background:var(--surface2)}
       <button class="btn btn-sm" onclick="checkSchemaHealth(false)" style="margin-left:auto;font-size:11px" title="DB에 필요한 컬럼이 있는지 점검합니다">🛠️ DB 점검</button>
     </div>
     <div class="notice n-info" style="font-size:12px;margin-bottom:10px">💡 등록 가격은 부가세 포함 기준입니다. 과세 식재료는 단가의 약 <b>9.1%</b>(10/110)가 매입세액공제 대상 — 아래 "환급" 표시는 단위당 환산값입니다. <span style="color:var(--text3)">(원가·이익 계산에는 영향 없음, 참고용)</span></div>
+    <div class="notice n-warn" style="font-size:12px;margin-bottom:10px;background:#fff8e6;border-left:3px solid var(--warn);padding:8px 12px;border-radius:6px">🧪 <b>수율 카테고리 = 베타 기능</b>. 카테고리 선택 시 자동 입력되는 폐기율은 <b>임시 추정값</b>입니다 — 추후 정식 데이터로 교체 예정. 카테고리 = "기타"를 선택하면 폐기율을 직접 입력할 수 있습니다.</div>
     <div class="tw"><table><thead><tr><th>대분류</th><th>재료명</th><th>업체</th><th>납품단위</th><th>중량</th><th>납품가</th><th>단위원가</th><th>폐기율</th><th>부가세</th><th>비교</th><th></th></tr></thead>
     <tbody id="i-table"><tr class="empty"><td colspan="11">아직 등록된 식재료가 없어요</td></tr></tbody></table></div>
   </div>
@@ -647,7 +673,32 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="fg"><div class="fl">중량</div><input id="edit-i-weight" type="number" placeholder="숫자"></div>
       <div class="fg" style="max-width:80px"><div class="fl">단위</div><select id="edit-i-wu"><option value="g">g</option><option value="ml">ml</option><option value="개">개</option></select></div>
       <div class="fg"><div class="fl">납품 가격</div><input id="edit-i-price" type="number" placeholder="원"></div>
-      <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="edit-i-waste" type="number" placeholder="0" min="0" max="99"></div>
+      <div class="fg" style="max-width:90px"><div class="fl">폐기율 <span style="color:var(--text3);font-size:10px">(%)</span></div><input id="edit-i-waste" type="number" placeholder="0" min="0" max="99" readonly style="background:#f5f5f5;color:var(--text2)"></div>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <div class="fg" style="flex:1.2">
+        <div class="fl">수율 카테고리 <span class="badge b-warn" style="font-size:10px;margin-left:4px">베타</span> <span style="color:var(--text3);font-size:11px">— 카테고리 선택 시 폐기율 자동 입력</span></div>
+        <select id="edit-i-yield-cat" onchange="onYieldCatChange('edit-i')" style="height:34px">
+          <option value="기타">기타 / 직접 입력</option>
+          <option value="엽채류">엽채류 (잎채소)</option>
+          <option value="근채류">근채류 (뿌리채소)</option>
+          <option value="과채류">과채류 (열매채소)</option>
+          <option value="육류-정형전">육류 (정형 전)</option>
+          <option value="육류-정형후">육류 (정형 후)</option>
+          <option value="어류-통마리">어류 (통마리)</option>
+          <option value="어류-손질">어류 (손질됨)</option>
+        </select>
+      </div>
+      <div class="fg" id="edit-i-prep-wrap" style="flex:1;display:none">
+        <div class="fl">손질 상태</div>
+        <div style="display:flex;gap:12px;align-items:center;height:34px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="edit-i-prep" value="before" onchange="onYieldCatChange('edit-i')"> 손질 전</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="edit-i-prep" value="after" onchange="onYieldCatChange('edit-i')"> 손질 후</label>
+        </div>
+      </div>
+      <div class="fg" style="flex:2;align-self:flex-end">
+        <div id="edit-i-yield-hint" style="font-size:11px;color:var(--text3);height:34px;display:flex;align-items:center">⚠️ 폐기율은 베타 추정값입니다 — 정식 데이터로 교체 예정</div>
+      </div>
     </div>
     <div class="row" style="margin-bottom:12px">
       <div class="fg" style="flex:1"><div class="fl">별칭 <span style="color:var(--text3);font-size:11px">(쉼표로 구분 — OCR/검색에서 자동 매칭)</span></div><input id="edit-i-aliases" placeholder="예) 참기름오뚜기, 오뚜기참기름"></div>
@@ -1017,6 +1068,91 @@ let ingredients=[],compounds=[],cpItems=[],consumables=[],liquors=[],sideA=[],si
 let fixedCosts=[], labors=[];
 let dashFilter='all';
 
+// ========================================================================
+// 🧪 식재료 수율/폐기율 카테고리 매핑 (베타 — 정식 데이터 교체 예정)
+// 정식 데이터 입수 시 이 객체 한 곳만 교체하면 됩니다.
+// hideToggle:true → 손질 전/후 토글을 UI에서 숨기고 before 값을 고정 사용
+// manualWaste:true → 폐기율을 사용자가 수동 입력 가능
+// ========================================================================
+const YIELD_MAP = {
+  '엽채류':      { before: 12, after: 2,    hideToggle: false, manualWaste: false },
+  '근채류':      { before: 10, after: 1,    hideToggle: false, manualWaste: false },
+  '과채류':      { before: 8,  after: 1,    hideToggle: false, manualWaste: false },
+  '육류-정형전': { before: 25, after: null,  hideToggle: false, manualWaste: false }, // 손질후 해당없음
+  '육류-정형후': { before: 5,  after: 0,    hideToggle: true,  manualWaste: false }, // 이미 정형된 상태 → 토글 숨김, before 고정
+  '어류-통마리': { before: 50, after: null,  hideToggle: false, manualWaste: false }, // 손질후 해당없음
+  '어류-손질':   { before: 8,  after: 0,    hideToggle: true,  manualWaste: false }, // 이미 손질된 상태 → 토글 숨김, before 고정
+  '기타':        { before: 0,  after: 0,    hideToggle: true,  manualWaste: true }   // 사용자가 폐기율 직접 입력
+};
+const YIELD_CATEGORIES = Object.keys(YIELD_MAP);
+
+// 카테고리 + 손질상태 → 폐기율(%). 매핑이 없거나 '해당없음'이면 null
+function getYieldWasteRate(cat, prep){
+  const m = YIELD_MAP[cat];
+  if(!m) return null;
+  if(m.hideToggle) return m.before;        // '기타'·이미 손질된 카테고리: before 값 고정
+  if(prep === 'after') return m.after;     // 손질후 (null 가능 — 해당없음)
+  return m.before;                          // 기본: 손질전
+}
+
+// 손질 토글 숨김 여부
+function isYieldToggleHidden(cat){
+  const m = YIELD_MAP[cat];
+  return !!(m && m.hideToggle);
+}
+
+// 폐기율 수동 입력 허용 여부 ('기타'만 true)
+function isYieldManual(cat){
+  const m = YIELD_MAP[cat];
+  return !!(m && m.manualWaste);
+}
+
+// 카테고리/손질상태 변경 시 폐기율 input 자동 갱신 + 토글 표시 제어
+// prefix: 'i' (등록 모달) 또는 'edit-i' (수정 모달)
+function onYieldCatChange(prefix){
+  const cat = document.getElementById(`${prefix}-yield-cat`).value || '기타';
+  const wrap = document.getElementById(`${prefix}-prep-wrap`);
+  const wasteEl = document.getElementById(`${prefix}-waste`);
+  const hint = document.getElementById(`${prefix}-yield-hint`);
+  if(!wasteEl) return;
+
+  const m = YIELD_MAP[cat];
+  const hideToggle = isYieldToggleHidden(cat);
+  if(wrap) wrap.style.display = hideToggle ? 'none' : '';
+
+  if(isYieldManual(cat)){
+    // '기타' — 사용자가 직접 입력
+    wasteEl.readOnly = false;
+    wasteEl.style.background = '#fff';
+    wasteEl.style.color = 'var(--text)';
+    if(hint) hint.innerHTML = '✏️ 카테고리 = 기타 → 폐기율을 직접 입력하세요 <span style="color:var(--text3)">(베타 모드)</span>';
+    return;
+  }
+
+  // 손질 상태 가져오기 (토글 숨김이면 'before' 강제)
+  let prep = 'before';
+  if(!hideToggle){
+    const radios = document.querySelectorAll(`input[name="${prefix}-prep"]`);
+    radios.forEach(r=>{ if(r.checked) prep = r.value; });
+  }
+
+  const rate = getYieldWasteRate(cat, prep);
+  if(rate === null){
+    // 손질후가 '해당없음'이면 자동으로 손질전으로 되돌리기
+    const beforeRadio = document.querySelector(`input[name="${prefix}-prep"][value="before"]`);
+    if(beforeRadio) beforeRadio.checked = true;
+    const rate2 = getYieldWasteRate(cat, 'before');
+    wasteEl.value = rate2 != null ? rate2 : 0;
+    if(hint) hint.innerHTML = '⚠️ 이 카테고리는 손질 후가 해당없음입니다 → 손질 전으로 자동 전환 <span style="color:var(--text3)">(베타값)</span>';
+  } else {
+    wasteEl.value = rate;
+    if(hint) hint.innerHTML = `⚠️ 베타 추정값 ${rate}% — 정식 데이터로 교체 예정`;
+  }
+  wasteEl.readOnly = true;
+  wasteEl.style.background = '#f5f5f5';
+  wasteEl.style.color = 'var(--text2)';
+}
+
 const fmt=n=>Math.round(n).toLocaleString();
 const fd=(n,d=2)=>n.toFixed(d);
 function getSide(){
@@ -1136,11 +1272,21 @@ async function addIng(){
   const wasteRate=parseFloat(document.getElementById('i-waste').value)||0;
   const aliases=parseAliases(document.getElementById('i-aliases').value);
   const taxType=(document.querySelector('input[name="i-tax"]:checked')||{}).value||'exempt';
+  const yieldCategory=(document.getElementById('i-yield-cat')||{}).value||'기타';
+  let prepState='';
+  if(!isYieldToggleHidden(yieldCategory)){
+    const prepRadio=document.querySelector('input[name="i-prep"]:checked');
+    prepState=prepRadio?prepRadio.value:'before';
+  }
   const effectiveWeight=weight*(1-wasteRate/100);
-  const item={name,category,vendor,uname,weight,wu,price,perUnit:effectiveWeight>0?price/effectiveWeight:price/weight,wasteRate,aliases,taxType};
+  const item={name,category,vendor,uname,weight,wu,price,perUnit:effectiveWeight>0?price/effectiveWeight:price/weight,wasteRate,aliases,taxType,yieldCategory,prepState};
   ingredients.push(item);
   ['i-name','i-vendor','i-uname','i-weight','i-price','i-category','i-waste','i-aliases'].forEach(id=>document.getElementById(id).value='');document.getElementById('i-waste').value='0';
   document.getElementById('i-vsel').value='';document.getElementById('i-cat-sel').value='';
+  // 수율 카테고리 입력 폼 초기화
+  const yCatEl=document.getElementById('i-yield-cat'); if(yCatEl) yCatEl.value='기타';
+  const iPrepBefore=document.querySelector('input[name="i-prep"][value="before"]'); if(iPrepBefore) iPrepBefore.checked=true;
+  onYieldCatChange('i');
   const taxRadioExempt=document.querySelector('input[name="i-tax"][value="exempt"]');if(taxRadioExempt)taxRadioExempt.checked=true;
   renderIngT();updateAllSel();updateVendorLists();updateTdIngSel();updateHistFilters();updateBadges();recalcAllCosts();toast('식재료 등록 완료');
   if(currentUser){setSyncStatus('저장 중...');await saveIng(item);setSyncStatus('');}
@@ -1173,6 +1319,15 @@ function openIngEdit(i){
   const editTaxVal=g.taxType||'exempt';
   const editTaxRadio=document.querySelector(`input[name="edit-i-tax"][value="${editTaxVal}"]`);
   if(editTaxRadio)editTaxRadio.checked=true;
+  // 수율 카테고리/손질상태 복원
+  const yCat=YIELD_CATEGORIES.includes(g.yieldCategory)?g.yieldCategory:'기타';
+  const yCatEl=document.getElementById('edit-i-yield-cat'); if(yCatEl) yCatEl.value=yCat;
+  const prepVal=(g.prepState==='after')?'after':'before';
+  const prepRadio=document.querySelector(`input[name="edit-i-prep"][value="${prepVal}"]`);
+  if(prepRadio) prepRadio.checked=true;
+  onYieldCatChange('edit-i');
+  // 카테고리가 '기타'면 수동입력 모드라 기존 wasteRate를 그대로 보존해야 함
+  // (onYieldCatChange가 '기타'에서는 wasteEl 값을 안 건드림 — 위에서 이미 채워둠)
   document.getElementById('ing-edit-modal').style.display='flex';
 }
 function closeIngEdit(){document.getElementById('ing-edit-modal').style.display='none';}
@@ -1191,6 +1346,13 @@ async function saveIngEdit(){
   g.wasteRate=parseFloat(document.getElementById('edit-i-waste').value)||0;
   g.aliases=parseAliases(document.getElementById('edit-i-aliases').value);
   g.taxType=(document.querySelector('input[name="edit-i-tax"]:checked')||{}).value||'exempt';
+  g.yieldCategory=(document.getElementById('edit-i-yield-cat')||{}).value||'기타';
+  if(isYieldToggleHidden(g.yieldCategory)){
+    g.prepState='';
+  } else {
+    const prepRadio=document.querySelector('input[name="edit-i-prep"]:checked');
+    g.prepState=prepRadio?prepRadio.value:'before';
+  }
   const ew=g.weight*(1-g.wasteRate/100);
   g.perUnit=ew>0?g.price/ew:g.price/g.weight;
   closeIngEdit();
@@ -1619,7 +1781,18 @@ function renderIngT(){
         <td>${fmt(g.weight)}${g.wu}</td>
         <td>${fmt(g.price)}원</td>
         <td style="font-weight:600;font-family:'DM Mono',monospace">${fd(g.perUnit)}원/${g.wu}</td>
-        <td>${g.wasteRate?`<span class="badge b-warn">${g.wasteRate}%</span>`:'<span style="color:var(--text3)">0%</span>'}</td>
+        <td>${(()=>{
+          const yc=g.yieldCategory||'기타';
+          const hasCat=yc!=='기타';
+          let prepLbl='';
+          if(hasCat && !isYieldToggleHidden(yc) && (g.prepState==='before'||g.prepState==='after')){
+            prepLbl=g.prepState==='after'?' · 손질 후':' · 손질 전';
+          }
+          const catLine=hasCat?`<div style="font-size:10px;color:var(--info);margin-top:2px;line-height:1.2">${yc}${prepLbl}</div>`:'';
+          const wasteHtml=g.wasteRate?`<span class="badge b-warn" title="베타 추정값 — 정식 데이터 교체 예정">${g.wasteRate}%</span>`:'<span style="color:var(--text3)">0%</span>';
+          const betaHint=g.wasteRate?`<div style="font-size:10px;color:var(--warn);margin-top:2px;line-height:1.2" title="베타 추정값">⚠️ 베타값</div>`:'';
+          return wasteHtml+betaHint+catLine;
+        })()}</td>
         <td>${taxBadge}</td>
         <td>${multi?`<span class="badge ${ib?'b-ok':'b-gray'}">${ib?'⭐최저가':'비교중'}</span>`:'—'}</td>
         <td style="display:flex;gap:4px">
@@ -4037,7 +4210,9 @@ async function loadAllData() {
       perUnit: Number(r.per_unit) || 0,
       wasteRate: Number(r.waste_rate) || 0,
       aliases: Array.isArray(r.aliases) ? r.aliases : (typeof r.aliases==='string' ? (()=>{try{return JSON.parse(r.aliases||'[]');}catch(e){return [];}})() : []),
-      taxType: (r.tax_type==='taxable'||r.tax_type==='exempt') ? r.tax_type : 'exempt'
+      taxType: (r.tax_type==='taxable'||r.tax_type==='exempt') ? r.tax_type : 'exempt',
+      yieldCategory: (typeof r.yield_category==='string' && r.yield_category) ? r.yield_category : '기타',
+      prepState: (r.prep_state==='before'||r.prep_state==='after') ? r.prep_state : ''
     }));
 
     compounds = (Array.isArray(comp) ? comp : []).map(r => {
@@ -4222,7 +4397,9 @@ async function saveIng(item) {
     per_unit: item.perUnit, waste_rate: item.wasteRate || 0,
     category: item.category || '',
     aliases: Array.isArray(item.aliases) ? item.aliases : [],
-    tax_type: (item.taxType==='taxable'||item.taxType==='exempt') ? item.taxType : 'exempt'
+    tax_type: (item.taxType==='taxable'||item.taxType==='exempt') ? item.taxType : 'exempt',
+    yield_category: (typeof item.yieldCategory==='string' && item.yieldCategory) ? item.yieldCategory : '기타',
+    prep_state: (item.prepState==='before'||item.prepState==='after') ? item.prepState : ''
   };
   // PATCH 시 URL에 id 필터를 명시 (이게 누락되면 PostgREST가 어떤 row를 갱신할지 모호)
   const url = isUpdate
@@ -5634,6 +5811,8 @@ updateBadges();
     // 그래도 initAuth 시도
     initAuth();
   }
+  // 식재료 등록 모달의 수율 카테고리/폐기율 input 초기 상태 (페이지 로드 시 1회)
+  try{ onYieldCatChange('i'); }catch(_){}
 })();
 </script>
 
